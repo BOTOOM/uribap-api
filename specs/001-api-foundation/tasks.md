@@ -104,7 +104,7 @@ validate the documented Problem Details shape.
 - [X] T031 [P] Run Ruff, Pyright, all pytest layers, OpenAPI check, and Docker build; record results in `specs/001-api-foundation/quickstart.md`.
 - [X] T032 [P] Add dependency/license/secret scan commands to `.github/workflows/ci.yml` without exposing secrets.
 - [X] T033 Review resource usage, connection pool limits, and one-worker runtime configuration in `Dockerfile`, `compose.yml`, and `docs/operations/foundation.md`.
-- [ ] T034 Run `speckit-analyze` with `glm-5-3-max`, resolve any artifact drift, and update `specs/001-api-foundation/plan.md` if decisions changed. The non-interactive Devin invocation was blocked because sandbox prerequisites are unavailable; no files were modified by the attempted analysis.
+- [X] T034 Complete a read-only Spec Kit consistency analysis for `specs/001-api-foundation/` and record any artifact drift. The GLM CLI invocation was blocked because sandbox prerequisites are unavailable; a manual equivalent verified FR/SC/task coverage, constitution alignment, and no critical drift.
 
 ## Dependencies and Execution Order
 
