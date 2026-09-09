@@ -1,0 +1,43 @@
+name: API CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: uribap
+          POSTGRES_USER: uribap
+          POSTGRES_PASSWORD: uribap
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U uribap -d uribap"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ENVIRONMENT: test
+      DATABASE_URL: postgresql+psycopg://uribap:uribap@localhost:5432/uribap
+      CORS_ORIGINS: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.12"
+      - run: uv sync --locked
+      - run: uv run alembic upgrade head
+      - run: uv run ruff check .
+      - run: uv run pyright
+      - run: uv run pytest
+      - run: PYTHONPATH=src uv run python -m uribap_api.tools.export_openapi --check
+      - run: uv run pip-audit

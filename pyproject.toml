@@ -1,0 +1,59 @@
+[project]
+name = "uribap-api"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "alembic>=1.19.2",
+    "fastapi>=0.141.1",
+    "psycopg[binary]>=3.3.5",
+    "pydantic-settings>=2.15.0",
+    "sqlalchemy>=2.0.52",
+    "uvicorn[standard]>=0.52.4",
+]
+
+[dependency-groups]
+dev = [
+    "coverage>=7.16.0",
+    "httpx>=0.28.1",
+    "pip-audit>=2.10.1",
+    "pyright>=1.1.411",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.6",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+src = ["src", "tests"]
+exclude = [".specify", "migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["uribap_api"]
+
+[tool.pyright]
+include = ["src", "tests"]
+exclude = [".venv", "migrations"]
+typeCheckingMode = "standard"
+
+[tool.coverage.run]
+branch = true
+source = ["src/uribap_api"]
+
+[tool.coverage.report]
+fail_under = 70
+skip_covered = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: pure unit tests without external services",
+    "integration: tests requiring PostgreSQL or other infrastructure",
+    "api: HTTP/API contract tests",
+]

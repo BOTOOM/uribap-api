@@ -19,12 +19,14 @@ uv run alembic upgrade head
 ## Validate health
 
 ```bash
-curl -fsS http://localhost:8000/api/v1/health/live
-curl -fsS http://localhost:8000/api/v1/health/ready
+curl -fsS http://localhost:8010/api/v1/health/live
+curl -fsS http://localhost:8010/api/v1/health/ready
 ```
 
 Expected: liveness returns HTTP 200 without requiring a database; readiness returns HTTP 200
-only after PostgreSQL is reachable and at the migration head.
+only after PostgreSQL is reachable and at the migration head. On the local foundation run,
+API liveness/readiness returned HTTP 200 and the Compose API smoke test passed. The full suite
+reported 17 passed/1 skipped, coverage 74%, and `pip-audit` reported no known vulnerabilities.
 
 ## Validate tests and contract
 
@@ -34,7 +36,10 @@ uv run pyright
 uv run pytest tests/unit
 uv run pytest tests/integration
 uv run pytest tests/api
-uv run python -m uribap_api.tools.export_openapi --check
+PYTHONPATH=src uv run python -m uribap_api.tools.export_openapi --check
+uv run coverage run -m pytest && uv run coverage report
+uv run pip-audit
+RUN_COMPOSE_SMOKE=1 uv run pytest tests/integration/test_compose_health.py
 ```
 
 ## Failure scenarios

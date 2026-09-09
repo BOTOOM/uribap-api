@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: uribap
+      POSTGRES_USER: uribap
+      POSTGRES_PASSWORD: uribap
+    ports:
+      - "5432:5432"
+    volumes:
+      - uribap-postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uribap -d uribap"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://uribap:uribap@db:5432/uribap
+    ports:
+      - "8010:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn uribap_api.main:app --app-dir src --host 0.0.0.0 --port 8000 --workers 1"]
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/live')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  uribap-postgres:
