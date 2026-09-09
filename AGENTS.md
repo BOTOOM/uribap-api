@@ -9,6 +9,10 @@ services, canonical OpenAPI contract, and Coolify deployment configuration for U
 
 - Read `.specify/memory/constitution.md` and the active feature artifacts before changing code.
 - Follow Spec Kit in order: specify, clarify, plan, checklist, tasks, analyze, implement, converge.
+- Every roadmap item MUST have its own complete feature spec, plan, data model/contracts when relevant,
+  tasks, tests, analyze result, implementation, and convergence before it is considered done.
+- No product code may start before the active spec/plan/tasks/analyze gate is complete, and no task
+  may be closed without its documented tests and quickstart validation.
 - Keep domain calculations framework-independent and use `Decimal` for quantities.
 - Add or update domain tests before implementation for inventory, forecast, shopping, preparation,
   completion, reconciliation, and concurrency changes.
