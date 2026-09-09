@@ -26,6 +26,13 @@ Expected checks will be documented in the active feature plan. Foundation target
 type checking, unit/integration/API tests, Alembic validation, OpenAPI generation, and Docker
 health checks.
 
+## Reusable testing skills
+
+- Use `/uribap-api-testing` before closing any API feature; it runs the project-specific quality,
+  migration, contract, security, and resource gates without editing code.
+- Use `/uribap-local-identity-testing` for OIDC/household features. Local complete email flows use
+  Docker Compose with ZITADEL, dedicated PostgreSQL, and Mailpit; Brevo is never used locally.
+
 ## Model guidance
 
 Use the model matrix in the active `specs/*/plan.md`. As of 2026-09-08, prefer
