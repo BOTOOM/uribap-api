@@ -56,7 +56,7 @@
 ## Decision 6: Model routing for this feature
 
 - **Decision**: Luna writes the architecture/plan, Sol implements, Terra reviews security and
-  migrations, GLM-5.3 performs long-context artifact analysis, and SWE-1.7 handles bounded fixes.
+  migrations, GLM-5.3 performs long-context artifact analysis, and SWE-2 handles bounded fixes at no model cost.
 - **Rationale**: This is the approved Uribap model policy and separates authorship from review.
 - **Alternatives considered**: Kimi K3 as a default. Kept only as an explicit high-cost escalation
   when the cross-repository artifact set is unusually large.

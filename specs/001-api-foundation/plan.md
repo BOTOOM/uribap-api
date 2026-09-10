@@ -1,6 +1,6 @@
 # Implementation Plan: API Foundation
 
-**Branch**: `001-api-foundation` | **Date**: 2026-09-08 | **Spec**: [spec.md](./spec.md)
+**Branch**: `001-api-foundation` | **Date**: 2026-09-10 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification for the Dockerized FastAPI backend foundation.
 
@@ -63,7 +63,7 @@ projection reads per household, and independent API/Web repositories
 - **Implementation**: `gpt-5-6-sol-high` for multi-file foundation code and migrations.
 - **Reviewer**: `gpt-5-6-terra-high` for security, configuration, error and migration review.
 - **Artifact analyst**: `glm-5-3-max` for `speckit-analyze` and long-context consistency.
-- **Routine fixer**: `swe-1-7` for bounded lint/type/test corrections.
+- **Routine fixer**: `swe-2-high` for bounded lint/type/test corrections; use `swe-2-max` for bounded multi-file fixes.
 - **Escalation**: `gpt-5-6-terra-max` only after explicit review shows unresolved critical risk;
   `kimi-k3-max` only for unusually large cross-repository artifact review.
 

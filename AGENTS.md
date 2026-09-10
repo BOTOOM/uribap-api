@@ -35,7 +35,7 @@ health checks.
 
 ## Model guidance
 
-Use the model matrix in the active `specs/*/plan.md`. As of 2026-09-08, prefer
+Use the model matrix in the active `specs/*/plan.md`. As of 2026-09-10, prefer
 `gpt-5-6-luna-max` for domain architecture, `gpt-5-6-sol-high` for implementation,
 `gpt-5-6-terra-high` for security/transaction review, `glm-5-3-max` for long-context
-analysis, `kimi-k3-max` only for explicit cross-repo escalation, and `swe-1-7` for bounded fixes.
+analysis, `kimi-k3-max` only for explicit cross-repo escalation, and `swe-2-high` for bounded fixes.

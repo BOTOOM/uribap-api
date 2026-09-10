@@ -9,7 +9,7 @@ description: "Executable tasks for the Uribap API foundation"
 **Prerequisites**: `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/`
 
 **Model policy**: primary Luna, implementation Sol, review Terra, artifact analysis GLM-5.3,
-routine fixes SWE-1.7; Kimi K3 only with explicit large-artifact escalation.
+routine fixes SWE-2; Kimi K3 only with explicit large-artifact escalation.
 
 ## Phase 1: Setup
 
