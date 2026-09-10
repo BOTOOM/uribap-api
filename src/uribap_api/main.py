@@ -15,6 +15,7 @@ from uribap_api.api.router import api_router
 from uribap_api.config import get_settings
 from uribap_api.domain.shared.errors import DomainError
 from uribap_api.infrastructure.database import create_database_engine, create_session_factory
+from uribap_api.infrastructure.identity.jwt_validator import TokenValidator
 from uribap_api.infrastructure.logging import RequestIdMiddleware, configure_logging
 
 settings = get_settings()
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
+    app.state.token_validator = TokenValidator(settings)
     yield
     engine.dispose()
 

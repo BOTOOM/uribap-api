@@ -94,4 +94,3 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         code="internal_error",
         request=request,
     )
-

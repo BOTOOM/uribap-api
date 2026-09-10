@@ -23,6 +23,11 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://uribap:uribap@db:5432/uribap
+      OIDC_JWKS_URL: http://host.docker.internal:8080/oauth/v2/keys
+      OIDC_JWKS_HOST: localhost
+      SMTP_HOST: host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8010:8000"
     depends_on:
