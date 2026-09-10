@@ -20,6 +20,9 @@ Use this skill for `002-identity-households`, `002-oidc-bff-onboarding`, and lat
 need real OIDC behavior. This stack is local-only and must never use production credentials,
 Brevo, real email addresses, or a production issuer.
 
+All API-side Python helpers and checks MUST run through UV (`uv run`/`uv sync --locked`); do not
+install packages with pip or create a separate manual virtualenv.
+
 ## Local stack contract
 
 The local Compose profile must provide:

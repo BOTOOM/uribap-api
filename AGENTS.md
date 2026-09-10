@@ -26,6 +26,13 @@ Expected checks will be documented in the active feature plan. Foundation target
 type checking, unit/integration/API tests, Alembic validation, OpenAPI generation, and Docker
 health checks.
 
+## Python tooling
+
+- UV is the only supported Python package and environment manager for this repository.
+- Add/update dependencies with `uv add`, keep `uv.lock` committed, and execute tools/tests with `uv run`.
+- Use `uv sync --locked` for reproducible setup and Docker/CI; do not run `pip install`, create a manual
+  `venv`, activate environments, or edit `uv.lock` by hand.
+
 ## Reusable testing skills
 
 - Use `/uribap-api-testing` before closing any API feature; it runs the project-specific quality,

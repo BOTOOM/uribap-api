@@ -16,6 +16,8 @@ The implementation remains a modular monolith. SQLAlchemy models and Alembic mig
 
 **Primary Dependencies**: FastAPI, SQLAlchemy 2, Alembic, psycopg 3, Pydantic Settings, PyJWT with cryptography, httpx, Python standard-library email/smtplib boundary, pytest, pytest-asyncio, HTTPX
 
+**Python Tooling**: UV exclusively (`uv add`, `uv sync --locked`, `uv run`, committed `uv.lock`); no pip or manual virtualenv.
+
 **Storage**: PostgreSQL 18 for Uribap application data; a separate PostgreSQL 17/18-compatible volume for local ZITADEL; no identity-provider data in the application database
 
 **Testing**: pytest unit tests for claims/roles/token hashing; API tests with deterministic JWT fixtures; PostgreSQL integration tests for migrations, constraints, concurrency, outbox, and tenant isolation; local Compose tests against ZITADEL/JWKS/Mailpit; deterministic OpenAPI export; Ruff, Pyright, pip-audit, secret scan

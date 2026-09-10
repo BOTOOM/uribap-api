@@ -5,13 +5,15 @@ This guide validates the feature locally with synthetic identities only. It neve
 ## Prerequisites
 
 - Docker Engine and Compose plugin.
-- `uv` and Python 3.14 for API checks.
+- `uv` and Python 3.14 for API checks; no standalone pip/venv setup is supported.
 - `curl` or HTTP client.
 - A clean local identity project name: `uribap-identity`.
 
-## 1. Prepare local identity variables
+## 1. Prepare the UV environment and local identity variables
 
 ```bash
+uv sync --locked
+
 cd identity
 cp .env.identity.example .env.identity
 # Generate ZITADEL_MASTERKEY and disposable database/admin values locally.
