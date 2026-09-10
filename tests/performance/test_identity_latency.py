@@ -22,7 +22,10 @@ def test_warm_jwks_cache_p95() -> None:
         response.raise_for_status()
         kid = response.json()["keys"][0]["kid"]
     token = jwt.encode(
-        {"sub": "benchmark"}, "benchmark-secret-0123456789012345", algorithm="HS256", headers={"kid": kid}
+        {"sub": "benchmark"},
+        "benchmark-secret-0123456789012345",
+        algorithm="HS256",
+        headers={"kid": kid},
     )
     cache = JWKSCache(
         settings.oidc_jwks_url,
