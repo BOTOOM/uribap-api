@@ -8,6 +8,18 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 _request_id: ContextVar[str] = ContextVar("request_id", default="")
+_SENSITIVE_KEYS = {"authorization", "cookie", "token", "secret", "password", "set-cookie"}
+
+
+def redact_sensitive(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if key.casefold() in _SENSITIVE_KEYS else redact_sensitive(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_sensitive(item) for item in value]
+    return value
 
 
 class JsonFormatter(logging.Formatter):
