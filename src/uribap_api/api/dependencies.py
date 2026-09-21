@@ -2,7 +2,7 @@ from collections.abc import Generator
 from dataclasses import dataclass
 from uuid import UUID
 
-from fastapi import Depends, Request
+from fastapi import Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -83,6 +83,25 @@ def require_household_membership(*roles: MembershipRole):
         return membership
 
     return dependency
+
+
+def get_active_household_membership(
+    household_id: UUID = Header(alias="X-Household-ID"),
+    user: AppUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> HouseholdMember:
+    membership = session.scalar(
+        select(HouseholdMember).where(
+            HouseholdMember.household_id == household_id,
+            HouseholdMember.user_id == user.id,
+            HouseholdMember.status == MembershipStatus.ACTIVE,
+        )
+    )
+    if membership is None:
+        raise DomainError(
+            "forbidden", "Permission denied", "The user is not an active household member.", 403
+        )
+    return membership
 
 
 def request_id() -> str:
