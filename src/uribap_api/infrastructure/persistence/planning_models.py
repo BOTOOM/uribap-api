@@ -72,6 +72,7 @@ class MealPlanEntry(Base):
         UniqueConstraint(
             "meal_plan_id", "planned_date", "meal_type", "position", name="uq_meal_plan_entry_slot"
         ),
+        UniqueConstraint("id", "household_id", name="uq_meal_plan_entry_household"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
