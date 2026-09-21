@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from uribap_api.api.forecast import router as forecast_router
 from uribap_api.api.health import router as health_router
 from uribap_api.api.households import router as households_router
 from uribap_api.api.identity import router as identity_router
@@ -18,3 +19,4 @@ api_router.include_router(invitations_router)
 api_router.include_router(ingredients_router)
 api_router.include_router(recipes_router)
 api_router.include_router(plans_router)
+api_router.include_router(forecast_router)
