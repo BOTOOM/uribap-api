@@ -1,6 +1,6 @@
 # Tasks: Inventory Ledger
 
-- [ ] T001 [P] Complete analyze/checklist traceability in `specs/004-inventory-ledger/analyze.md`.
+- [x] T001 [P] Complete analyze/checklist traceability in `specs/004-inventory-ledger/analyze.md` and `traceability.md`.
 - [ ] T002 [P] Add pure Decimal ledger/no-negative/idempotency tests in `tests/unit/domain/test_inventory_ledger.py`.
 - [ ] T003 Implement ledger value objects and movement policy in `src/uribap_api/domain/inventory/ledger.py`.
 - [ ] T004 Add inventory lot/movement models and Alembic migration in `src/uribap_api/infrastructure/persistence/inventory_models.py` and `migrations/versions/`.
