@@ -551,6 +551,10 @@
             ],
             "title": "Expiration Date"
           },
+          "expired": {
+            "title": "Expired",
+            "type": "boolean"
+          },
           "household_id": {
             "format": "uuid",
             "title": "Household Id",
@@ -603,6 +607,7 @@
           "unit",
           "location",
           "available",
+          "expired",
           "expiration_date",
           "notes",
           "updated_at"

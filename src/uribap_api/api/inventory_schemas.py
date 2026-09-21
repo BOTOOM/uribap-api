@@ -48,6 +48,7 @@ class InventoryLotResponse(BaseModel):
     unit: str
     location: InventoryLocation
     available: bool
+    expired: bool
     expiration_date: date | None
     notes: str | None
     updated_at: datetime

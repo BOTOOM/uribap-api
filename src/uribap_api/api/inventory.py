@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -38,6 +39,7 @@ def lot_response(
         unit=lot.unit,
         location=lot.location,
         available=lot.available,
+        expired=lot.expiration_date is not None and lot.expiration_date < date.today(),
         expiration_date=lot.expiration_date,
         notes=lot.notes,
         updated_at=lot.updated_at,
