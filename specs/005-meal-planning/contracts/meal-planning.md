@@ -24,7 +24,7 @@ Response `201`: `MealPlanEntryResponse`. `409` on version mismatch, non-draft pl
 
 ## `PATCH /plans/{plan_id}/entries/{entry_id}` and `DELETE /plans/{plan_id}/entries/{entry_id}`
 
-Both require `expected_version`; same `409`/`422` semantics. `PATCH` accepts `planned_date`, `meal_type`, `servings`, `position`, `notes`. `DELETE` removes the entry and bumps the version.
+Both require `expected_version`; same `409`/`422` semantics. `PATCH` accepts `planned_date`, `meal_type`, `recipe_version_id`, `servings`, `position`, `notes`; a changed `recipe_version_id` MUST still reference a `published` version of the household (`422` otherwise), and an explicit `notes: null` clears the note. `DELETE` removes the entry and bumps the version.
 
 ## `POST /plans/{plan_id}/propose`, `/approve`, `/reopen`, `/archive`
 

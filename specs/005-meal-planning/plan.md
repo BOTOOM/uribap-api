@@ -20,3 +20,14 @@ Pure state-machine/version tests precede persistence; then PostgreSQL migration,
 - API checks: UV Ruff, Pyright, unit/API/integration tests, Alembic upgrade/check, OpenAPI export/check, pip-audit, Docker health/smoke, and resource sample.
 - Database checks: version increments, composite tenant foreign keys, append-only state events, idempotency replay/conflict, unique active plan per week, and concurrent mutation tests.
 - No email delivery or deployment is required for this feature; both remain explicit out of scope.
+
+## Delivery impact summary
+
+Per the constitution, each stacked PR declares its impact on migrations, contract, tests, security, and deployment:
+
+| Layer | Migrations | Contract | Tests | Security | Deployment |
+|-------|------------|----------|-------|----------|------------|
+| spec | none | meal-planning contract doc | checklist/tasks | approval-separation rule defined | none |
+| domain | none | none | pure policy tests | approver != proposer invariant | none |
+| persistence | `b5c9e1a3d407` adds 4 tables + append-only trigger | none | PostgreSQL schema/integration tests | composite tenant FKs, partial unique index | none |
+| service | none | `/plans*` routes + `MealPlanEntryResponse` + Problem Details | API contract + replay/conflict tests | household scoping, optimistic concurrency, idempotency | none (deployment stays out of scope) |

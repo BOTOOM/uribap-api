@@ -6,16 +6,16 @@
 
 - **US1 (P1)**: A household member creates a meal plan for a week (Monday `week_start_date`); the plan starts as `draft`.
 - **US2 (P1)**: Members add, update, and remove planned meals (planned date, meal type, published recipe version, servings, position) while the plan is editable.
-- **US3 (P1)**: Every mutation carries `expected_version`; a stale writer receives `409` and must reload before retrying.
-- **US4 (P1)**: A member proposes the plan and a different member approves it; when the household has more than one active member, the approver MUST differ from the proposer. Any member can return a proposed plan to `draft`.
+- **US3 (P1)**: Every mutation of an existing plan carries `expected_version`; a stale writer receives `409` and must reload before retrying. Plan creation has no prior version, so concurrent creation is serialized by the unique active-week index.
+- **US4 (P1)**: A member proposes the plan and a different member approves it; when the household has more than one active member, the approver MUST differ from the proposer. Any member can return a `proposed` or `approved` plan to `draft`; reopening an `approved` plan requires a note.
 - **US5 (P2)**: Plan entries pin a specific published recipe version, so later recipe edits never rewrite the plan's historical truth.
 - **US6 (P2)**: A member can archive a plan; archived plans remain readable for audit.
 
 ## Requirements
 
 - **FR-001**: `meal_plan` MUST be tenant-isolated by household and carry an integer `version` incremented transactionally on every mutation.
-- **FR-002**: Every mutation MUST require `expected_version`; a mismatch MUST return `409` and MUST NOT apply partial changes.
-- **FR-003**: Plan states MUST be `draft`, `proposed`, `approved`, `archived`. Entries are editable only in `draft`. `proposed` locks entries pending approval. `approved` is the terminal active state. `archived` is terminal.
+- **FR-002**: Every mutation of an existing plan MUST require `expected_version`; a mismatch MUST return `409` and MUST NOT apply partial changes. Plan creation is exempt because no prior version exists; concurrent creation MUST be serialized by the unique partial index on `(household_id, week_start_date)` for non-archived plans and MUST surface `409` on collision.
+- **FR-003**: Plan states MUST be `draft`, `proposed`, `approved`, `archived`. Entries are editable only in `draft`. `proposed` locks entries pending approval. `approved` is the confirmed active state and MAY return to `draft` only via `reopen` with a mandatory note. `archived` is terminal.
 - **FR-004**: Entries MUST reference a `published` recipe version, a `planned_date` inside the plan week, a `meal_type` from the recipe domain enum, `servings > 0`, and a `position`.
 - **FR-005**: Planning MUST NOT mutate inventory lots, movements, or balances; it is projected demand only.
 - **FR-006**: Every state transition MUST append a `meal_plan_state_event` row with actor, from/to state, and UTC timestamp; events are append-only.
