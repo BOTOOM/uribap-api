@@ -26,6 +26,8 @@ Use this skill before declaring any API feature complete. The active feature's `
 - Never use production credentials, Brevo credentials, real user data, or production OIDC issuers.
 - Domain calculations must be tested without FastAPI/PostgreSQL before integration tests.
 - A feature cannot be reported green if its required test command was skipped or failed.
+- UV is mandatory for every Python operation: use `uv sync --locked`, `uv add`, and `uv run`.
+  Never use `pip install`, create/activate a manual virtualenv, or edit `uv.lock` by hand.
 
 ## Required verification order
 

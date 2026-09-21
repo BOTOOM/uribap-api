@@ -1,10 +1,11 @@
 <!--
 Sync Impact Report
-Version change: template → 1.0.0
+Version change: 1.0.0 → 1.0.1
 Modified principles: none; replaced the generated placeholders with API governance.
-Added sections: backend constraints, workflow and model policy.
+Added sections: backend constraints, workflow and model policy; exclusive UV tooling rule.
 Removed sections: none; the template placeholders were resolved.
 Deferred items: exact dependency versions are selected during foundation after release-age and security checks.
+Tooling clarification: UV is the exclusive Python dependency/environment manager.
 -->
 # Uribap API Constitution
 
@@ -58,6 +59,9 @@ security/dependency scans are release gates.
 ## Backend Constraints
 
 - Python/FastAPI, PostgreSQL, SQLAlchemy 2, Alembic, and Pydantic are the planned stack.
+- UV MUST be the exclusive Python package/environment manager: dependencies use `uv add`, setup uses
+  `uv sync --locked`, execution uses `uv run`, and `uv.lock` is the only lock source. `pip install`,
+  manual virtualenv creation/activation, and direct lockfile edits are prohibited.
 - Quantities MUST use Decimal/NUMERIC; supported MVP dimensions are count, mass, and volume.
 - The MVP MUST support units, grams, kilograms, milliliters, and liters without cross-dimension guesses.
 - Food, product, or recipe images MUST NOT be stored or uploaded.
@@ -93,4 +97,4 @@ A major version changes or removes a principle; a minor version adds a principle
 expands governance; a patch version clarifies wording without changing obligations. Any
 constitution conflict found by analysis is blocking until resolved explicitly.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-08
+**Version**: 1.0.1 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-10

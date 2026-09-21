@@ -59,3 +59,17 @@ def ready(request: Request) -> ReadyHealthResponse | JSONResponse:
         dependencies={"database": DependencyHealth(status="ok")},
         request_id=get_request_id() or None,
     )
+
+
+@router.get("/identity", response_model=DependencyHealth)
+async def identity(request: Request) -> DependencyHealth | JSONResponse:
+    try:
+        ready = await request.app.state.token_validator.ready()
+    except Exception:
+        ready = False
+    if not ready:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "unavailable"},
+        )
+    return DependencyHealth(status="ok")
