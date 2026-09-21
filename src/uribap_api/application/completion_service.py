@@ -9,7 +9,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from uribap_api.api.completion_schemas import (
-    CompletionActualLine,
     MealCompletionCreate,
     MealCompletionLineResponse,
     MealCompletionResponse,
@@ -83,9 +82,7 @@ def _find_receipt(
     )
 
 
-def _check_receipt(
-    receipt: CompletionOperation | None, fingerprint: str
-) -> dict[str, Any] | None:
+def _check_receipt(receipt: CompletionOperation | None, fingerprint: str) -> dict[str, Any] | None:
     if receipt is None:
         return None
     if receipt.request_hash != fingerprint:
@@ -135,15 +132,11 @@ def _commit_or_replay(
             receipt = _find_receipt(session, membership, operation, idempotency_key)
             if receipt is not None:
                 return _check_receipt(receipt, fingerprint)
-        raise DomainError(
-            "conflict", "Meal completion conflict", conflict_detail, 409
-        ) from exc
+        raise DomainError("conflict", "Meal completion conflict", conflict_detail, 409) from exc
     return None
 
 
-def _completion_row(
-    session: Session, completion: MealCompletion
-) -> MealCompletionResponse:
+def _completion_row(session: Session, completion: MealCompletion) -> MealCompletionResponse:
     entry = session.get(MealPlanEntry, completion.meal_plan_entry_id)
     recipe_name: str | None = None
     recipe_version_id: UUID | None = entry.recipe_version_id if entry else None
@@ -199,9 +192,7 @@ def _completion_row(
     )
 
 
-def _completion_payload(
-    session: Session, completion: MealCompletion
-) -> dict[str, Any]:
+def _completion_payload(session: Session, completion: MealCompletion) -> dict[str, Any]:
     return _completion_row(session, completion).model_dump(mode="json")
 
 
@@ -231,7 +222,6 @@ def _get_completion(
 def _locked_lots(
     session: Session, membership: HouseholdMember, line: ConsumptionLine
 ) -> list[InventoryLot]:
-    today = date.today()
     return list(
         session.scalars(
             select(InventoryLot)
@@ -258,13 +248,9 @@ def _write_movement(
     operation: str,
 ) -> None:
     try:
-        balance = LedgerBalance(Decimal(lot.quantity_on_hand), lot.unit).apply(
-            delta, lot.unit
-        )
+        balance = LedgerBalance(Decimal(lot.quantity_on_hand), lot.unit).apply(delta, lot.unit)
     except ValueError as exc:
-        raise DomainError(
-            "conflict", "Inventory balance conflict", str(exc), 409
-        ) from exc
+        raise DomainError("conflict", "Inventory balance conflict", str(exc), 409) from exc
     lot.quantity_on_hand = balance.amount
     session.add(
         InventoryMovement(
@@ -323,9 +309,7 @@ def _reverse_line_consumption(
     operation: str,
 ) -> None:
     rows = session.execute(
-        select(
-            InventoryMovement.lot_id, func.sum(InventoryMovement.delta)
-        )
+        select(InventoryMovement.lot_id, func.sum(InventoryMovement.delta))
         .where(
             InventoryMovement.household_id == membership.household_id,
             InventoryMovement.source_type == COMPLETION_SOURCE_TYPE,
@@ -622,9 +606,7 @@ def correct_line(
     try:
         corrected_amount = quantize_amount(actual_amount, allow_zero=False)
     except InventoryLedgerError as exc:
-        raise DomainError(
-            "validation_error", "Invalid amount", str(exc), 422
-        ) from exc
+        raise DomainError("validation_error", "Invalid amount", str(exc), 422) from exc
     corrected = ConsumptionLine(
         ingredient_id=line.ingredient_id,
         planned_amount=Decimal(line.planned_amount),

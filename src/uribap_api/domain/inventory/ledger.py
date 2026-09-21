@@ -52,9 +52,7 @@ class LedgerBalance:
             raise InventoryLedgerError("movement unit does not match lot unit")
         normalized_delta = validate_delta(delta)
         try:
-            next_amount = (self.amount + normalized_delta).quantize(
-                QUANTUM, rounding=ROUND_HALF_UP
-            )
+            next_amount = (self.amount + normalized_delta).quantize(QUANTUM, rounding=ROUND_HALF_UP)
         except InvalidOperation as exc:
             raise InventoryLedgerError("quantity exceeds NUMERIC(18,6) precision") from exc
         if next_amount < 0:

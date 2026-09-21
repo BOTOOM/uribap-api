@@ -47,13 +47,10 @@ class MealCompletion(Base):
             postgresql_where="state = 'recorded'",
         ),
         Index("ix_meal_completion_completed_at", "household_id", "completed_at"),
-        CheckConstraint(
-            "state IN ('recorded', 'reopened')", name="ck_meal_completion_state"
-        ),
+        CheckConstraint("state IN ('recorded', 'reopened')", name="ck_meal_completion_state"),
         CheckConstraint("version >= 1", name="ck_meal_completion_version_positive"),
         CheckConstraint(
-            "state <> 'reopened' OR (reopened_by_user_id IS NOT NULL "
-            "AND reopened_at IS NOT NULL)",
+            "state <> 'reopened' OR (reopened_by_user_id IS NOT NULL AND reopened_at IS NOT NULL)",
             name="ck_meal_completion_reopened_fields",
         ),
     )
@@ -69,18 +66,12 @@ class MealCompletion(Base):
         default=MealCompletionState.RECORDED,
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    completed_by_user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("app_user.id"), nullable=False
-    )
-    completed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    completed_by_user_id: Mapped[UUID] = mapped_column(ForeignKey("app_user.id"), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     reopened_by_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("app_user.id"))
     reopened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reopen_reason: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -100,18 +91,10 @@ class MealCompletionLine(Base):
             "unit",
             name="uq_meal_completion_line_ingredient",
         ),
-        CheckConstraint(
-            "planned_amount >= 0", name="ck_meal_completion_line_planned_nonneg"
-        ),
-        CheckConstraint(
-            "actual_amount > 0", name="ck_meal_completion_line_actual_positive"
-        ),
-        CheckConstraint(
-            "length(btrim(unit)) > 0", name="ck_meal_completion_line_unit_nonempty"
-        ),
-        CheckConstraint(
-            "position >= 0", name="ck_meal_completion_line_position_nonneg"
-        ),
+        CheckConstraint("planned_amount >= 0", name="ck_meal_completion_line_planned_nonneg"),
+        CheckConstraint("actual_amount > 0", name="ck_meal_completion_line_actual_positive"),
+        CheckConstraint("length(btrim(unit)) > 0", name="ck_meal_completion_line_unit_nonempty"),
+        CheckConstraint("position >= 0", name="ck_meal_completion_line_position_nonneg"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -119,17 +102,13 @@ class MealCompletionLine(Base):
         ForeignKey("household.id", ondelete="CASCADE"), index=True
     )
     meal_completion_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
-    ingredient_id: Mapped[UUID] = mapped_column(
-        ForeignKey("ingredient.id"), nullable=False
-    )
+    ingredient_id: Mapped[UUID] = mapped_column(ForeignKey("ingredient.id"), nullable=False)
     planned_amount: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     actual_amount: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     unit: Mapped[str] = mapped_column(String(8), nullable=False)
     optional: Mapped[bool] = mapped_column(nullable=False, default=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -154,6 +133,4 @@ class CompletionOperation(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(128))
     request_hash: Mapped[str | None] = mapped_column(String(64))
     result_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

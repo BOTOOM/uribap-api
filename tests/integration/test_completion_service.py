@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from uribap_api.api.completion_schemas import (
@@ -228,9 +228,7 @@ def test_complete_entry_deducts_fefo(integration_engine) -> None:
         plan_id, entry_id = _plan_with_entry(session, member, week, version)
         session.commit()
 
-        result = complete_entry(
-            session, member, plan_id, entry_id, MealCompletionCreate(), None
-        )
+        result = complete_entry(session, member, plan_id, entry_id, MealCompletionCreate(), None)
         payload = result.payload
         assert payload["state"] == "recorded"
         assert payload["version"] == 1
@@ -283,9 +281,7 @@ def test_complete_requires_approved_plan(integration_engine) -> None:
         rice = _ingredient(session, household, "Rice")
         version = _version(session, household, member, [(rice, "0.5", "kg", False)])
         _lot(session, member, rice, "5", None)
-        plan_id, entry_id = _plan_with_entry(
-            session, member, week, version, approve=False
-        )
+        plan_id, entry_id = _plan_with_entry(session, member, week, version, approve=False)
         session.commit()
 
         with pytest.raises(DomainError) as excinfo:
@@ -330,9 +326,7 @@ def test_complete_explicit_lines_and_idempotent_replay(integration_engine) -> No
 
         payload = MealCompletionCreate(
             lines=[
-                CompletionActualLine(
-                    ingredient_id=rice.id, actual_amount=Decimal("0.7"), unit="kg"
-                )
+                CompletionActualLine(ingredient_id=rice.id, actual_amount=Decimal("0.7"), unit="kg")
             ]
         )
         result = complete_entry(session, member, plan_id, entry_id, payload, "ck-1")
@@ -383,9 +377,7 @@ def test_correct_line_reverses_and_rededucts(integration_engine) -> None:
         plan_id, entry_id = _plan_with_entry(session, member, week, version)
         session.commit()
 
-        created = complete_entry(
-            session, member, plan_id, entry_id, MealCompletionCreate(), None
-        )
+        created = complete_entry(session, member, plan_id, entry_id, MealCompletionCreate(), None)
         completion_id = UUID(created.payload["id"])
         line_id = UUID(created.payload["lines"][0]["id"])
         session.refresh(lot)
@@ -465,15 +457,17 @@ def test_reopen_restores_inventory_and_recompletion(integration_engine) -> None:
         plan_id, entry_id = _plan_with_entry(session, member, week, version)
         session.commit()
 
-        created = complete_entry(
-            session, member, plan_id, entry_id, MealCompletionCreate(), None
-        )
+        created = complete_entry(session, member, plan_id, entry_id, MealCompletionCreate(), None)
         completion_id = UUID(created.payload["id"])
         session.refresh(lot)
         assert lot.quantity_on_hand == Decimal("4.500000")
 
         reopened = reopen_completion(
-            session, member, completion_id, expected_version=1, reason="mistake",
+            session,
+            member,
+            completion_id,
+            expected_version=1,
+            reason="mistake",
             idempotency_key=None,
         )
         assert reopened.payload["state"] == "reopened"
@@ -485,7 +479,11 @@ def test_reopen_restores_inventory_and_recompletion(integration_engine) -> None:
         # reopen again -> 409
         with pytest.raises(DomainError):
             reopen_completion(
-                session, member, completion_id, expected_version=2, reason=None,
+                session,
+                member,
+                completion_id,
+                expected_version=2,
+                reason=None,
                 idempotency_key=None,
             )
         # correct on reopened -> 409
@@ -502,9 +500,7 @@ def test_reopen_restores_inventory_and_recompletion(integration_engine) -> None:
             )
 
         # the entry can be completed again as a new recorded row
-        again = complete_entry(
-            session, member, plan_id, entry_id, MealCompletionCreate(), None
-        )
+        again = complete_entry(session, member, plan_id, entry_id, MealCompletionCreate(), None)
         assert again.payload["state"] == "recorded"
         assert again.payload["id"] != str(completion_id)
 
@@ -523,9 +519,7 @@ def test_tenant_isolation(integration_engine) -> None:
         plan_id, entry_id = _plan_with_entry(session, member, week, version)
         session.commit()
 
-        created = complete_entry(
-            session, member, plan_id, entry_id, MealCompletionCreate(), None
-        )
+        created = complete_entry(session, member, plan_id, entry_id, MealCompletionCreate(), None)
         completion_id = UUID(created.payload["id"])
         line_id = UUID(created.payload["lines"][0]["id"])
 
@@ -534,7 +528,11 @@ def test_tenant_isolation(integration_engine) -> None:
         assert excinfo.value.status_code == 404
         with pytest.raises(DomainError) as excinfo:
             reopen_completion(
-                session, other, completion_id, expected_version=1, reason=None,
+                session,
+                other,
+                completion_id,
+                expected_version=1,
+                reason=None,
                 idempotency_key=None,
             )
         assert excinfo.value.status_code == 404
@@ -563,9 +561,7 @@ def test_list_filters(integration_engine) -> None:
         plan_id, entry_id = _plan_with_entry(session, member, week, version)
         session.commit()
 
-        created = complete_entry(
-            session, member, plan_id, entry_id, MealCompletionCreate(), None
-        )
+        created = complete_entry(session, member, plan_id, entry_id, MealCompletionCreate(), None)
         completion_id = UUID(created.payload["id"])
 
         all_items = list_completions(session, member, None, None, None, None)
@@ -573,13 +569,9 @@ def test_list_filters(integration_engine) -> None:
 
         from uribap_api.domain.completion.policies import MealCompletionState
 
-        recorded = list_completions(
-            session, member, None, MealCompletionState.RECORDED, None, None
-        )
+        recorded = list_completions(session, member, None, MealCompletionState.RECORDED, None, None)
         assert len(recorded) == 1
-        reopened = list_completions(
-            session, member, None, MealCompletionState.REOPENED, None, None
-        )
+        reopened = list_completions(session, member, None, MealCompletionState.REOPENED, None, None)
         assert reopened == []
 
         now = datetime.now(UTC)

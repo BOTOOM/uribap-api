@@ -67,9 +67,7 @@ def list_completions_route(
     )
 
 
-@router.get(
-    "/{completion_id}", response_model=MealCompletionResponse, responses=ERROR_RESPONSES
-)
+@router.get("/{completion_id}", response_model=MealCompletionResponse, responses=ERROR_RESPONSES)
 def get_completion_route(
     completion_id: UUID,
     membership: HouseholdMember = Depends(get_active_household_membership),

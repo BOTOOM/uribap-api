@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from uribap_api.api.completion import plans_router as completion_plans_router
+from uribap_api.api.completion import router as completion_router
 from uribap_api.api.forecast import router as forecast_router
 from uribap_api.api.health import router as health_router
 from uribap_api.api.households import router as households_router
@@ -9,8 +11,6 @@ from uribap_api.api.inventory import router as inventory_router
 from uribap_api.api.invitations import router as invitations_router
 from uribap_api.api.plans import router as plans_router
 from uribap_api.api.preparation import router as preparation_router
-from uribap_api.api.completion import plans_router as completion_plans_router
-from uribap_api.api.completion import router as completion_router
 from uribap_api.api.recipes import router as recipes_router
 from uribap_api.api.shopping import router as shopping_router
 

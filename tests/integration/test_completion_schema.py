@@ -103,8 +103,7 @@ def _completion(
         "state": state,
     }
     columns = (
-        "id, household_id, meal_plan_entry_id, state, version, completed_by_user_id, "
-        "completed_at"
+        "id, household_id, meal_plan_entry_id, state, version, completed_by_user_id, completed_at"
     )
     values = ":id, :hid, :eid, :state, 1, :uid, :now"
     if state == "reopened":
