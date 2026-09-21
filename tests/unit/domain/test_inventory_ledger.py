@@ -16,6 +16,12 @@ def test_ledger_applies_decimal_delta_without_float_drift() -> None:
     assert balance.apply(Decimal("0.2"), "kg").amount == Decimal("0.3")
 
 
+def test_ledger_applies_negative_delta_for_consumption() -> None:
+    balance = LedgerBalance(Decimal("2.5"), "kg")
+    assert balance.apply(Decimal("-0.5"), "kg").amount == Decimal("2.0")
+    assert validate_delta(Decimal("-0.500001")) == Decimal("-0.500001")
+
+
 def test_ledger_rejects_negative_balance_and_unit_mismatch() -> None:
     balance = LedgerBalance(Decimal("2"), "unit")
     with pytest.raises(InventoryLedgerError):
