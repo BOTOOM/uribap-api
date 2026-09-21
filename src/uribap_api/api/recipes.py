@@ -5,6 +5,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from uribap_api.api.dependencies import get_active_household_membership, get_session
+from uribap_api.api.preparation_schemas import PreparationRuleCreate, PreparationRuleResponse
 from uribap_api.api.recipe_schemas import (
     PublishedRecipeVersionPage,
     PublishedRecipeVersionResponse,
@@ -14,6 +15,7 @@ from uribap_api.api.recipe_schemas import (
     RecipeResponse,
     RecipeVersionCreate,
 )
+from uribap_api.application.preparation_service import add_rule, delete_rule
 from uribap_api.application.recipe_service import (
     create_recipe,
     create_version,
@@ -132,6 +134,35 @@ def publish_route(
     return RecipePublishResponse(
         recipe_id=recipe_id, version=version.version_number, state=version.state
     )
+
+
+@router.post(
+    "/{recipe_id}/versions/{version_id}/preparation-rules",
+    response_model=PreparationRuleResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_preparation_rule_route(
+    recipe_id: UUID,
+    version_id: UUID,
+    payload: PreparationRuleCreate,
+    membership: HouseholdMember = Depends(get_active_household_membership),
+    session: Session = Depends(get_session),
+) -> PreparationRuleResponse:
+    return add_rule(session, membership, recipe_id, version_id, payload)
+
+
+@router.delete(
+    "/{recipe_id}/versions/{version_id}/preparation-rules/{rule_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_preparation_rule_route(
+    recipe_id: UUID,
+    version_id: UUID,
+    rule_id: UUID,
+    membership: HouseholdMember = Depends(get_active_household_membership),
+    session: Session = Depends(get_session),
+) -> None:
+    delete_rule(session, membership, recipe_id, version_id, rule_id)
 
 
 @router.post("/{recipe_id}/favorite", status_code=status.HTTP_204_NO_CONTENT)
