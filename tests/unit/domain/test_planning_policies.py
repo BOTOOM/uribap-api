@@ -7,6 +7,7 @@ from uribap_api.domain.planning.policies import (
     MealPlanAction,
     MealPlanningError,
     MealPlanState,
+    PlanEntryDraft,
     apply_transition,
     assert_version,
     can_edit_entries,
@@ -14,6 +15,7 @@ from uribap_api.domain.planning.policies import (
     validate_servings,
     validate_week_start,
 )
+from uribap_api.domain.recipes.policies import RecipeMealType
 from uribap_api.domain.shared.fingerprint import operation_fingerprint
 
 MONDAY = date(2026, 9, 28)
@@ -112,6 +114,45 @@ def test_reopen_from_approved_requires_a_note() -> None:
         )
         == MealPlanState.DRAFT
     )
+
+
+def test_approval_requires_a_proposer_in_multi_member_household() -> None:
+    with pytest.raises(MealPlanningError):
+        apply_transition(
+            MealPlanState.PROPOSED,
+            MealPlanAction.APPROVE,
+            actor_id=uuid4(),
+            proposed_by=None,
+            active_member_count=2,
+            note=None,
+        )
+
+
+def test_entry_draft_validates_servings_and_position() -> None:
+    with pytest.raises(MealPlanningError):
+        PlanEntryDraft(
+            planned_date=MONDAY,
+            meal_type=RecipeMealType.DINNER,
+            recipe_version_id=uuid4(),
+            servings=0,
+            position=0,
+        )
+    with pytest.raises(MealPlanningError):
+        PlanEntryDraft(
+            planned_date=MONDAY,
+            meal_type=RecipeMealType.DINNER,
+            recipe_version_id=uuid4(),
+            servings=2,
+            position=-1,
+        )
+    draft = PlanEntryDraft(
+        planned_date=MONDAY,
+        meal_type=RecipeMealType.DINNER,
+        recipe_version_id=uuid4(),
+        servings=2,
+        position=0,
+    )
+    assert draft.meal_type == RecipeMealType.DINNER
 
 
 def test_version_conflict_and_increment() -> None:

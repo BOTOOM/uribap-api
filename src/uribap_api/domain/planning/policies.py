@@ -3,6 +3,8 @@ from datetime import date, timedelta
 from enum import StrEnum
 from uuid import UUID
 
+from uribap_api.domain.recipes.policies import RecipeMealType
+
 
 class MealPlanState(StrEnum):
     DRAFT = "draft"
@@ -54,13 +56,11 @@ def apply_transition(
     allowed, target = _TRANSITIONS[action]
     if state not in allowed:
         raise MealPlanningError(f"cannot {action} a plan in state {state}")
-    if (
-        action == MealPlanAction.APPROVE
-        and active_member_count >= 2
-        and proposed_by is not None
-        and actor_id == proposed_by
-    ):
-        raise MealPlanningError("the proposer cannot approve their own plan")
+    if action == MealPlanAction.APPROVE and active_member_count >= 2:
+        if proposed_by is None:
+            raise MealPlanningError("the plan proposer is required for approval")
+        if actor_id == proposed_by:
+            raise MealPlanningError("the proposer cannot approve their own plan")
     if action == MealPlanAction.REOPEN and state == MealPlanState.APPROVED and not note:
         raise MealPlanningError("reopening an approved plan requires a note")
     return target
@@ -93,8 +93,13 @@ def validate_servings(servings: int) -> int:
 @dataclass(frozen=True)
 class PlanEntryDraft:
     planned_date: date
-    meal_type: str
+    meal_type: RecipeMealType
     recipe_version_id: UUID
     servings: int
     position: int
     notes: str | None = None
+
+    def __post_init__(self) -> None:
+        validate_servings(self.servings)
+        if self.position < 0:
+            raise MealPlanningError("position must not be negative")
