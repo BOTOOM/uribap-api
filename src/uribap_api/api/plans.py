@@ -10,31 +10,25 @@ from uribap_api.api.inventory_schemas import ProblemDetails
 from uribap_api.api.plan_schemas import (
     MealPlanCreate,
     MealPlanEntryCreate,
-    MealPlanEntryResponse,
     MealPlanEntryUpdate,
     MealPlanEventPage,
     MealPlanResponse,
-    MealPlanStateEventResponse,
     MealPlanTransition,
 )
 from uribap_api.application.planning_service import (
     add_entry,
     create_plan,
     delete_entry,
+    event_response,
     get_current_plan,
     get_plan,
-    list_entries,
     list_events,
+    plan_response,
     transition_plan,
     update_entry,
 )
 from uribap_api.domain.planning.policies import MealPlanAction
 from uribap_api.infrastructure.persistence.household_models import HouseholdMember
-from uribap_api.infrastructure.persistence.planning_models import (
-    MealPlan,
-    MealPlanEntry,
-    MealPlanStateEvent,
-)
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -44,50 +38,6 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     409: {"model": ProblemDetails},
     422: {"model": ProblemDetails},
 }
-
-
-def entry_response(entry: MealPlanEntry) -> MealPlanEntryResponse:
-    return MealPlanEntryResponse(
-        id=entry.id,
-        meal_plan_id=entry.meal_plan_id,
-        planned_date=entry.planned_date,
-        meal_type=entry.meal_type,
-        recipe_version_id=entry.recipe_version_id,
-        servings=entry.servings,
-        position=entry.position,
-        notes=entry.notes,
-        added_by_user_id=entry.added_by_user_id,
-        created_at=entry.created_at,
-        updated_at=entry.updated_at,
-    )
-
-
-def plan_response(
-    session: Session, membership: HouseholdMember, plan: MealPlan
-) -> MealPlanResponse:
-    entries = list_entries(session, membership, plan.id)
-    return MealPlanResponse(
-        id=plan.id,
-        household_id=plan.household_id,
-        week_start_date=plan.week_start_date,
-        state=plan.state,
-        version=plan.version,
-        entries=[entry_response(entry) for entry in entries],
-        created_at=plan.created_at,
-        updated_at=plan.updated_at,
-    )
-
-
-def event_response(event: MealPlanStateEvent) -> MealPlanStateEventResponse:
-    return MealPlanStateEventResponse(
-        id=event.id,
-        meal_plan_id=event.meal_plan_id,
-        from_state=event.from_state,
-        to_state=event.to_state,
-        actor_user_id=event.actor_user_id,
-        note=event.note,
-        created_at=event.created_at,
-    )
 
 
 @router.post(
@@ -102,8 +52,8 @@ def create_plan_route(
     membership: HouseholdMember = Depends(get_active_household_membership),
     session: Session = Depends(get_session),
 ) -> MealPlanResponse:
-    plan = create_plan(session, membership, payload, idempotency_key)
-    return plan_response(session, membership, plan)
+    result = create_plan(session, membership, payload, idempotency_key)
+    return MealPlanResponse.model_validate(result.payload)
 
 
 @router.get("/current", response_model=MealPlanResponse, responses=ERROR_RESPONSES)
@@ -137,8 +87,8 @@ def add_entry_route(
     membership: HouseholdMember = Depends(get_active_household_membership),
     session: Session = Depends(get_session),
 ) -> MealPlanResponse:
-    plan, _entry = add_entry(session, membership, plan_id, payload, idempotency_key)
-    return plan_response(session, membership, plan)
+    result = add_entry(session, membership, plan_id, payload, idempotency_key)
+    return MealPlanResponse.model_validate(result.payload)
 
 
 @router.patch(
@@ -152,8 +102,8 @@ def update_entry_route(
     membership: HouseholdMember = Depends(get_active_household_membership),
     session: Session = Depends(get_session),
 ) -> MealPlanResponse:
-    plan, _entry = update_entry(session, membership, plan_id, entry_id, payload, idempotency_key)
-    return plan_response(session, membership, plan)
+    result = update_entry(session, membership, plan_id, entry_id, payload, idempotency_key)
+    return MealPlanResponse.model_validate(result.payload)
 
 
 @router.delete(
@@ -167,8 +117,8 @@ def delete_entry_route(
     membership: HouseholdMember = Depends(get_active_household_membership),
     session: Session = Depends(get_session),
 ) -> MealPlanResponse:
-    plan = delete_entry(session, membership, plan_id, entry_id, expected_version, idempotency_key)
-    return plan_response(session, membership, plan)
+    result = delete_entry(session, membership, plan_id, entry_id, expected_version, idempotency_key)
+    return MealPlanResponse.model_validate(result.payload)
 
 
 def _transition_route(
@@ -179,8 +129,8 @@ def _transition_route(
     membership: HouseholdMember,
     session: Session,
 ) -> MealPlanResponse:
-    plan = transition_plan(session, membership, plan_id, action, payload, idempotency_key)
-    return plan_response(session, membership, plan)
+    result = transition_plan(session, membership, plan_id, action, payload, idempotency_key)
+    return MealPlanResponse.model_validate(result.payload)
 
 
 @router.post("/{plan_id}/propose", response_model=MealPlanResponse, responses=ERROR_RESPONSES)

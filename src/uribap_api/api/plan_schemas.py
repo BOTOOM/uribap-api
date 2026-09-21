@@ -46,6 +46,7 @@ class MealPlanEntryUpdate(BaseModel):
     expected_version: int = Field(ge=1)
     planned_date: date | None = None
     meal_type: RecipeMealType | None = None
+    recipe_version_id: UUID | None = None
     servings: int | None = None
     position: int | None = Field(default=None, ge=0)
     notes: str | None = Field(default=None, max_length=2000)

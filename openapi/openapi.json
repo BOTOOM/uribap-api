@@ -1113,6 +1113,18 @@
             ],
             "title": "Position"
           },
+          "recipe_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Version Id"
+          },
           "servings": {
             "anyOf": [
               {
