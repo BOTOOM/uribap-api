@@ -12,6 +12,16 @@ from uribap_api.domain.inventory.ledger import (
 )
 
 
+class ProblemDetails(BaseModel):
+    type: str
+    title: str
+    status: int
+    detail: str
+    instance: str | None = None
+    code: str
+    requestId: str | None = None
+
+
 class InventoryLotCreate(BaseModel):
     ingredient_id: UUID
     quantity: Decimal = Field(gt=0)
