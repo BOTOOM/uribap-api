@@ -91,7 +91,8 @@ def list_published_versions(
         )
         .order_by(Recipe.normalized_name, desc(RecipeVersion.version_number))
     )
-    return list(session.execute(statement).all())
+    rows = session.execute(statement).all()
+    return [(row[0], row[1]) for row in rows]
 
 
 def get_recipe(session: Session, membership: HouseholdMember, recipe_id: UUID) -> Recipe:
