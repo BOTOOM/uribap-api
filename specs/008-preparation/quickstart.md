@@ -21,4 +21,21 @@ entry and see the task cancelled. Create a manual task and replay with the same
 
 ## Evidence
 
-Pending — recorded during convergence.
+Validated 2026-10-05 against clean PostgreSQL `uribap_ci` (all migrations applied,
+`alembic check` reports no drift):
+
+- `ruff check` + `ruff format --check`: clean.
+- `pyright`: 0 errors.
+- `tests/unit/domain/test_preparation_policies.py`: 9 passed (transitions, version,
+  timezone fallback, lead bounds, `due_at` per meal type, fingerprint determinism,
+  manual-task validation).
+- `tests/integration/test_preparation_schema.py`: 5 passed (columns, CHECKs, composite
+  FK tenancy, derived-fingerprint partial uniqueness, operation idempotency).
+- `tests/integration/test_preparation_service.py`: 8 passed (approve-time derivation,
+  idempotent re-approval with stale-task cancellation, manual validation, tenancy,
+  transitions with `expected_version`, Europe/Madrid `due_at`, no-rules no-tasks).
+- `tests/api/test_preparation_routes.py`: passed (OpenAPI route/method/error-shape
+  assertions).
+- Full suite: `136 passed, 3 skipped`.
+- `openapi/openapi.json` regenerated with `preparation-tasks` and `preparation-rules`
+  paths; `pip-audit`: no known vulnerabilities.
