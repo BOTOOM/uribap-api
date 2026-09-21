@@ -11,7 +11,13 @@ from alembic import context  # noqa: E402
 
 from uribap_api.config import get_settings  # noqa: E402
 from uribap_api.infrastructure.persistence.base import Base  # noqa: E402
-from uribap_api.infrastructure.persistence import household_models, identity_models  # noqa: E402,F401
+from uribap_api.infrastructure.persistence import (  # noqa: E402
+    household_models,
+    identity_models,
+    ingredient_models,
+    inventory_models,
+    recipe_models,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -48,6 +54,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        compare_type=False,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -71,7 +78,7 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, target_metadata=target_metadata, compare_type=False
         )
 
         with context.begin_transaction():

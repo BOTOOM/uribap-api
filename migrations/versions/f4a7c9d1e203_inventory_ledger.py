@@ -39,6 +39,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["household_id"], ["household.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["ingredient_id"], ["ingredient.id"]),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("id", "household_id", name="uq_inventory_lot_household"),
         sa.CheckConstraint("quantity_on_hand >= 0", name="ck_inventory_lot_quantity_nonnegative"),
         sa.CheckConstraint(
             "location IN ('pantry', 'refrigerator', 'freezer')", name="ck_inventory_lot_location"
@@ -66,16 +67,25 @@ def upgrade() -> None:
         sa.Column("actor_user_id", sa.Uuid(), nullable=False),
         sa.Column("source_type", sa.String(80), nullable=True),
         sa.Column("source_id", sa.Uuid(), nullable=True),
+        sa.Column(
+            "operation", sa.String(80), nullable=False, server_default="inventory_adjustment"
+        ),
         sa.Column("idempotency_key", sa.String(128), nullable=True),
+        sa.Column("request_hash", sa.String(64), nullable=True),
+        sa.Column("result_quantity_on_hand", sa.Numeric(18, 6), nullable=True),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
         sa.ForeignKeyConstraint(["actor_user_id"], ["app_user.id"]),
         sa.ForeignKeyConstraint(["household_id"], ["household.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["lot_id"], ["inventory_lot.id"]),
+        sa.ForeignKeyConstraint(
+            ["lot_id", "household_id"],
+            ["inventory_lot.id", "inventory_lot.household_id"],
+            name="fk_inventory_movement_lot_household",
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
-            "household_id", "idempotency_key", name="uq_inventory_movement_idempotency"
+            "household_id", "operation", "idempotency_key", name="uq_inventory_movement_idempotency"
         ),
         sa.CheckConstraint("delta <> 0", name="ck_inventory_movement_delta_nonzero"),
         sa.CheckConstraint(
@@ -86,9 +96,30 @@ def upgrade() -> None:
     op.create_index("ix_inventory_movement_household_id", "inventory_movement", ["household_id"])
     op.create_index("ix_inventory_movement_lot_id", "inventory_movement", ["lot_id"])
     op.create_index("ix_inventory_movement_actor_user_id", "inventory_movement", ["actor_user_id"])
+    op.execute(
+        """
+        CREATE FUNCTION prevent_inventory_movement_mutation()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            RAISE EXCEPTION 'inventory_movement is append-only';
+        END;
+        $$;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER inventory_movement_append_only
+        BEFORE UPDATE OR DELETE ON inventory_movement
+        FOR EACH ROW EXECUTE FUNCTION prevent_inventory_movement_mutation();
+        """
+    )
 
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER IF EXISTS inventory_movement_append_only ON inventory_movement")
+    op.execute("DROP FUNCTION IF EXISTS prevent_inventory_movement_mutation()")
     op.drop_index("ix_inventory_movement_actor_user_id", table_name="inventory_movement")
     op.drop_index("ix_inventory_movement_lot_id", table_name="inventory_movement")
     op.drop_index("ix_inventory_movement_household_id", table_name="inventory_movement")
