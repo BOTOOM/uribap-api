@@ -2,8 +2,6 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from enum import StrEnum
 
-from uribap_api.domain.shared.fingerprint import operation_fingerprint
-
 
 class InventoryLocation(StrEnum):
     PANTRY = "pantry"

@@ -20,7 +20,7 @@ MONDAY = date(2026, 9, 28)
 
 
 def test_state_machine_allows_and_rejects_transitions() -> None:
-    actor, other = uuid4(), uuid4()
+    actor = uuid4()
     assert (
         apply_transition(
             MealPlanState.DRAFT,
@@ -137,8 +137,14 @@ def test_servings_must_be_positive() -> None:
 
 
 def test_operation_fingerprint_is_stable_and_payload_sensitive() -> None:
-    first = operation_fingerprint("meal_plan_entry_create", {"servings": 2, "planned_date": "2026-09-29"})
-    same = operation_fingerprint("meal_plan_entry_create", {"planned_date": "2026-09-29", "servings": 2})
-    different = operation_fingerprint("meal_plan_entry_create", {"servings": 3, "planned_date": "2026-09-29"})
+    first = operation_fingerprint(
+        "meal_plan_entry_create", {"servings": 2, "planned_date": "2026-09-29"}
+    )
+    same = operation_fingerprint(
+        "meal_plan_entry_create", {"planned_date": "2026-09-29", "servings": 2}
+    )
+    different = operation_fingerprint(
+        "meal_plan_entry_create", {"servings": 3, "planned_date": "2026-09-29"}
+    )
     assert first == same
     assert first != different
