@@ -97,3 +97,16 @@ class RecipeResponse(BaseModel):
 class RecipePage(BaseModel):
     items: list[RecipeResponse]
     page_info: dict[str, object]
+
+
+class PublishedRecipeVersionResponse(BaseModel):
+    recipe_version_id: UUID
+    recipe_id: UUID
+    recipe_name: str
+    version_number: int
+    base_servings: int
+    prep_minutes: int
+
+
+class PublishedRecipeVersionPage(BaseModel):
+    items: list[PublishedRecipeVersionResponse]

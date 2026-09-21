@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from uribap_api.api.dependencies import get_active_household_membership, get_session
 from uribap_api.api.recipe_schemas import (
+    PublishedRecipeVersionPage,
+    PublishedRecipeVersionResponse,
     RecipeCreate,
     RecipePage,
     RecipePublishResponse,
@@ -17,6 +19,7 @@ from uribap_api.application.recipe_service import (
     create_version,
     favorite_recipe,
     get_recipe,
+    list_published_versions,
     list_recipes,
     publish_version,
     unfavorite_recipe,
@@ -67,6 +70,26 @@ def create_route(
         .order_by(desc(RecipeVersion.version_number))
     )
     return recipe_response(recipe, version)
+
+
+@router.get("/published-versions", response_model=PublishedRecipeVersionPage)
+def published_versions_route(
+    membership: HouseholdMember = Depends(get_active_household_membership),
+    session: Session = Depends(get_session),
+) -> PublishedRecipeVersionPage:
+    return PublishedRecipeVersionPage(
+        items=[
+            PublishedRecipeVersionResponse(
+                recipe_version_id=version.id,
+                recipe_id=recipe.id,
+                recipe_name=recipe.name,
+                version_number=version.version_number,
+                base_servings=version.base_servings,
+                prep_minutes=version.prep_minutes,
+            )
+            for version, recipe in list_published_versions(session, membership)
+        ]
+    )
 
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)
