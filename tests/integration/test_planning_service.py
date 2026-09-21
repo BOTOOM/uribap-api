@@ -44,7 +44,9 @@ def _member(
     )
     session.add(member)
     session.flush()
-    return session.get(Household, household_id), member
+    household = session.get(Household, household_id)
+    assert household is not None
+    return household, member
 
 
 def _second_member(session: Session, household: Household) -> HouseholdMember:
@@ -353,4 +355,6 @@ def test_delete_entry_bumps_version(integration_engine) -> None:
         )
         assert removed.payload["entries"] == []
         assert removed.payload["version"] == created.payload["version"] + 1
-        assert session.get(MealPlan, plan.payload["id"]).version == removed.payload["version"]
+        stored = session.get(MealPlan, plan.payload["id"])
+        assert stored is not None
+        assert stored.version == removed.payload["version"]
