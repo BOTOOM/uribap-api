@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, status
@@ -13,6 +14,7 @@ from uribap_api.api.inventory_schemas import (
     InventoryMovementPage,
     InventoryMovementResponse,
     InventoryPage,
+    ProblemDetails,
 )
 from uribap_api.application.inventory_service import (
     apply_adjustment,
@@ -24,6 +26,13 @@ from uribap_api.infrastructure.persistence.household_models import HouseholdMemb
 from uribap_api.infrastructure.persistence.inventory_models import InventoryLot, InventoryMovement
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
+ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: {"model": ProblemDetails},
+    403: {"model": ProblemDetails},
+    404: {"model": ProblemDetails},
+    409: {"model": ProblemDetails},
+    422: {"model": ProblemDetails},
+}
 
 
 def lot_response(
@@ -64,7 +73,7 @@ def movement_response(movement: InventoryMovement) -> InventoryMovementResponse:
     )
 
 
-@router.get("", response_model=InventoryPage)
+@router.get("", response_model=InventoryPage, responses=ERROR_RESPONSES)
 def list_route(
     include_expired: bool = False,
     membership: HouseholdMember = Depends(get_active_household_membership),
@@ -75,7 +84,12 @@ def list_route(
     )
 
 
-@router.post("/lots", response_model=InventoryLotResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/lots",
+    response_model=InventoryLotResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses=ERROR_RESPONSES,
+)
 def create_lot_route(
     payload: InventoryLotCreate,
     membership: HouseholdMember = Depends(get_active_household_membership),
@@ -84,7 +98,7 @@ def create_lot_route(
     return lot_response(create_lot(session, membership, payload))
 
 
-@router.post("/adjustments", response_model=InventoryLotResponse)
+@router.post("/adjustments", response_model=InventoryLotResponse, responses=ERROR_RESPONSES)
 def adjustment_route(
     payload: InventoryAdjustment,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=128),
@@ -95,7 +109,9 @@ def adjustment_route(
     return lot_response(result.lot, result.quantity_on_hand)
 
 
-@router.get("/lots/{lot_id}/movements", response_model=InventoryMovementPage)
+@router.get(
+    "/lots/{lot_id}/movements", response_model=InventoryMovementPage, responses=ERROR_RESPONSES
+)
 def movements_route(
     lot_id: UUID,
     membership: HouseholdMember = Depends(get_active_household_membership),
