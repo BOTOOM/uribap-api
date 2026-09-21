@@ -9,6 +9,7 @@ from uribap_api.api.inventory import router as inventory_router
 from uribap_api.api.invitations import router as invitations_router
 from uribap_api.api.plans import router as plans_router
 from uribap_api.api.recipes import router as recipes_router
+from uribap_api.api.shopping import router as shopping_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
@@ -20,3 +21,4 @@ api_router.include_router(ingredients_router)
 api_router.include_router(recipes_router)
 api_router.include_router(plans_router)
 api_router.include_router(forecast_router)
+api_router.include_router(shopping_router)
