@@ -256,7 +256,8 @@ def test_completion_line_constraints_and_composite_fk(integration_engine) -> Non
         session.commit()
 
         completion_id = _completion(session, household_id, user_id, entry_id)
-        foreign_completion = _completion(session, other_id, other_user, _entry(session, other_id, other_user))
+        foreign_entry = _entry(session, other_id, other_user)
+        foreign_completion = _completion(session, other_id, other_user, foreign_entry)
         session.commit()
 
         # cross-tenant completion reference is rejected by the composite FK
