@@ -15,6 +15,7 @@ from uribap_api.api.plan_schemas import (
     MealPlanStateEventResponse,
     MealPlanTransition,
 )
+from uribap_api.application.preparation_service import reconcile_derived_tasks
 from uribap_api.domain.planning.policies import (
     MealPlanAction,
     MealPlanningError,
@@ -648,6 +649,8 @@ def transition_plan(
                 note=payload.note,
             )
         )
+        if action == MealPlanAction.APPROVE:
+            reconcile_derived_tasks(session, membership, plan)
         session.flush()
         result = _plan_payload(session, membership, plan)
         _store_receipt(session, membership, operation, idempotency_key, fingerprint, result)
