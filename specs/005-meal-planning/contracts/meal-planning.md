@@ -20,11 +20,11 @@ Headers: `Idempotency-Key` optional. Request:
 {"expected_version":1,"planned_date":"2026-09-29","meal_type":"dinner","recipe_version_id":"uuid","servings":2,"position":0,"notes":null}
 ```
 
-Response `201`: `MealPlanEntryResponse`. `409` on version mismatch, non-draft plan, duplicate `(planned_date, meal_type)` position conflict, or idempotency hash mismatch; `422` unpublished recipe version / invalid servings / date outside week.
+Response `201`: `MealPlanResponse` — the authoritative plan snapshot including the bumped `version` and `entries`, so clients can chain `expected_version` without a second fetch. `409` on version mismatch, non-draft plan, duplicate `(planned_date, meal_type)` position conflict, or idempotency hash mismatch; `422` unpublished recipe version / invalid servings / date outside week.
 
 ## `PATCH /plans/{plan_id}/entries/{entry_id}` and `DELETE /plans/{plan_id}/entries/{entry_id}`
 
-Both require `expected_version`; same `409`/`422` semantics. `PATCH` accepts `planned_date`, `meal_type`, `recipe_version_id`, `servings`, `position`, `notes`; a changed `recipe_version_id` MUST still reference a `published` version of the household (`422` otherwise), and an explicit `notes: null` clears the note. `DELETE` removes the entry and bumps the version.
+Both require `expected_version` and return `MealPlanResponse` (same deliberate snapshot contract as entry creation); same `409`/`422` semantics. `PATCH` accepts `planned_date`, `meal_type`, `recipe_version_id`, `servings`, `position`, `notes`; a changed `recipe_version_id` MUST still reference a `published` version of the household (`422` otherwise), and an explicit `notes: null` clears the note. `DELETE` removes the entry and bumps the version.
 
 ## `POST /plans/{plan_id}/propose`, `/approve`, `/reopen`, `/archive`
 
