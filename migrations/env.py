@@ -18,6 +18,7 @@ from uribap_api.infrastructure.persistence import (  # noqa: E402
     inventory_models,
     planning_models,
     recipe_models,
+    shopping_models,
 )
 
 # this is the Alembic Config object, which provides
