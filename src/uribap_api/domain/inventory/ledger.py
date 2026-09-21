@@ -1,9 +1,6 @@
-import hashlib
-import json
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from enum import StrEnum
-from typing import Any
 
 
 class InventoryLocation(StrEnum):
@@ -70,13 +67,3 @@ def validate_delta(delta: Decimal) -> Decimal:
 
 def validate_quantity(amount: Decimal) -> Decimal:
     return quantize_amount(amount)
-
-
-def operation_fingerprint(operation: str, payload: dict[str, Any]) -> str:
-    canonical = json.dumps(
-        {"operation": operation, "payload": payload},
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()

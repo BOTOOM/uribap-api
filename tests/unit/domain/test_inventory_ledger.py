@@ -5,10 +5,10 @@ import pytest
 from uribap_api.domain.inventory.ledger import (
     InventoryLedgerError,
     LedgerBalance,
-    operation_fingerprint,
     validate_delta,
     validate_quantity,
 )
+from uribap_api.domain.shared.fingerprint import operation_fingerprint
 
 
 def test_ledger_applies_decimal_delta_without_float_drift() -> None:

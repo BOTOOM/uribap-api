@@ -11,9 +11,9 @@ from uribap_api.api.inventory_schemas import InventoryAdjustment, InventoryLotCr
 from uribap_api.domain.inventory.ledger import (
     InventoryMovementType,
     LedgerBalance,
-    operation_fingerprint,
 )
 from uribap_api.domain.shared.errors import DomainError
+from uribap_api.domain.shared.fingerprint import operation_fingerprint
 from uribap_api.infrastructure.persistence.household_models import HouseholdMember
 from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
 from uribap_api.infrastructure.persistence.inventory_models import InventoryLot, InventoryMovement
