@@ -78,6 +78,22 @@ def list_recipes(
     ]
 
 
+def list_published_versions(
+    session: Session, membership: HouseholdMember
+) -> list[tuple[RecipeVersion, Recipe]]:
+    statement = (
+        select(RecipeVersion, Recipe)
+        .join(Recipe, Recipe.id == RecipeVersion.recipe_id)
+        .where(
+            Recipe.household_id == membership.household_id,
+            Recipe.archived_at.is_(None),
+            RecipeVersion.state == RecipeVersionState.PUBLISHED,
+        )
+        .order_by(Recipe.normalized_name, desc(RecipeVersion.version_number))
+    )
+    return list(session.execute(statement).all())
+
+
 def get_recipe(session: Session, membership: HouseholdMember, recipe_id: UUID) -> Recipe:
     recipe = session.get(Recipe, recipe_id)
     if recipe is None or recipe.household_id != membership.household_id:

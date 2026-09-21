@@ -1539,6 +1539,62 @@
         "title": "ProblemDetails",
         "type": "object"
       },
+      "PublishedRecipeVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PublishedRecipeVersionResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PublishedRecipeVersionPage",
+        "type": "object"
+      },
+      "PublishedRecipeVersionResponse": {
+        "properties": {
+          "base_servings": {
+            "title": "Base Servings",
+            "type": "integer"
+          },
+          "prep_minutes": {
+            "title": "Prep Minutes",
+            "type": "integer"
+          },
+          "recipe_id": {
+            "format": "uuid",
+            "title": "Recipe Id",
+            "type": "string"
+          },
+          "recipe_name": {
+            "title": "Recipe Name",
+            "type": "string"
+          },
+          "recipe_version_id": {
+            "format": "uuid",
+            "title": "Recipe Version Id",
+            "type": "string"
+          },
+          "version_number": {
+            "title": "Version Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "recipe_version_id",
+          "recipe_id",
+          "recipe_name",
+          "version_number",
+          "base_servings",
+          "prep_minutes"
+        ],
+        "title": "PublishedRecipeVersionResponse",
+        "type": "object"
+      },
       "ReadyHealthResponse": {
         "properties": {
           "dependencies": {
@@ -4687,6 +4743,54 @@
           }
         ],
         "summary": "Create Route",
+        "tags": [
+          "recipes"
+        ]
+      }
+    },
+    "/api/v1/recipes/published-versions": {
+      "get": {
+        "operationId": "published_versions_route_api_v1_recipes_published_versions_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Household-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Household-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedRecipeVersionPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Published Versions Route",
         "tags": [
           "recipes"
         ]
