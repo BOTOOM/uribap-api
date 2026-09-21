@@ -1,3 +1,4 @@
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, status
@@ -24,12 +25,16 @@ from uribap_api.infrastructure.persistence.inventory_models import InventoryLot,
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 
-def lot_response(lot: InventoryLot) -> InventoryLotResponse:
+def lot_response(
+    lot: InventoryLot, quantity_override: Decimal | None = None
+) -> InventoryLotResponse:
     return InventoryLotResponse(
         id=lot.id,
         household_id=lot.household_id,
         ingredient_id=lot.ingredient_id,
-        quantity_on_hand=lot.quantity_on_hand,
+        quantity_on_hand=quantity_override
+        if quantity_override is not None
+        else lot.quantity_on_hand,
         unit=lot.unit,
         location=lot.location,
         available=lot.available,
@@ -49,7 +54,10 @@ def movement_response(movement: InventoryMovement) -> InventoryMovementResponse:
         actor_user_id=movement.actor_user_id,
         source_type=movement.source_type,
         source_id=movement.source_id,
+        operation=movement.operation,
         idempotency_key=movement.idempotency_key,
+        request_hash=movement.request_hash,
+        result_quantity_on_hand=movement.result_quantity_on_hand,
         created_at=movement.created_at,
     )
 
@@ -77,11 +85,12 @@ def create_lot_route(
 @router.post("/adjustments", response_model=InventoryLotResponse)
 def adjustment_route(
     payload: InventoryAdjustment,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=128),
     membership: HouseholdMember = Depends(get_active_household_membership),
     session: Session = Depends(get_session),
 ) -> InventoryLotResponse:
-    return lot_response(apply_adjustment(session, membership, payload, idempotency_key))
+    result = apply_adjustment(session, membership, payload, idempotency_key)
+    return lot_response(result.lot, result.quantity_on_hand)
 
 
 @router.get("/lots/{lot_id}/movements", response_model=InventoryMovementPage)

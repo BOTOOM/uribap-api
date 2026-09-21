@@ -442,6 +442,7 @@
           "source_type": {
             "anyOf": [
               {
+                "maxLength": 80,
                 "type": "string"
               },
               {
@@ -666,6 +667,33 @@
           "movement_type": {
             "$ref": "#/components/schemas/InventoryMovementType"
           },
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          },
+          "request_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Hash"
+          },
+          "result_quantity_on_hand": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Quantity On Hand"
+          },
           "source_id": {
             "anyOf": [
               {
@@ -703,7 +731,10 @@
           "actor_user_id",
           "source_type",
           "source_id",
+          "operation",
           "idempotency_key",
+          "request_hash",
+          "result_quantity_on_hand",
           "created_at"
         ],
         "title": "InventoryMovementResponse",
@@ -2355,6 +2386,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 128,
                   "type": "string"
                 },
                 {

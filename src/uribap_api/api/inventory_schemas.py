@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field, field_validator
 from uribap_api.domain.inventory.ledger import (
     InventoryLocation,
     InventoryMovementType,
+    quantize_amount,
     validate_delta,
-    validate_quantity,
 )
 
 
@@ -23,7 +23,7 @@ class InventoryLotCreate(BaseModel):
     @field_validator("quantity")
     @classmethod
     def positive_quantity(cls, value: Decimal) -> Decimal:
-        return validate_quantity(value)
+        return quantize_amount(value, allow_zero=False)
 
 
 class InventoryAdjustment(BaseModel):
@@ -31,7 +31,7 @@ class InventoryAdjustment(BaseModel):
     delta: Decimal
     unit: str
     movement_type: InventoryMovementType = InventoryMovementType.MANUAL_ADJUSTMENT
-    source_type: str | None = None
+    source_type: str | None = Field(default=None, max_length=80)
     source_id: UUID | None = None
 
     @field_validator("delta")
@@ -62,7 +62,10 @@ class InventoryMovementResponse(BaseModel):
     actor_user_id: UUID
     source_type: str | None
     source_id: UUID | None
+    operation: str
     idempotency_key: str | None
+    request_hash: str | None
+    result_quantity_on_hand: Decimal | None
     created_at: datetime
 
 

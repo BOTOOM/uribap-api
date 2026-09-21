@@ -1,16 +1,28 @@
+from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from uribap_api.api.inventory_schemas import InventoryAdjustment, InventoryLotCreate
-from uribap_api.domain.inventory.ledger import LedgerBalance
+from uribap_api.domain.inventory.ledger import (
+    InventoryMovementType,
+    LedgerBalance,
+    operation_fingerprint,
+)
 from uribap_api.domain.shared.errors import DomainError
 from uribap_api.infrastructure.persistence.household_models import HouseholdMember
 from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
 from uribap_api.infrastructure.persistence.inventory_models import InventoryLot, InventoryMovement
+
+
+@dataclass(frozen=True)
+class InventoryLotResult:
+    lot: InventoryLot
+    quantity_on_hand: Decimal
 
 
 def _validate_ingredient_unit(ingredient: Ingredient, unit: str) -> None:
@@ -73,9 +85,11 @@ def create_lot(
             lot_id=lot.id,
             delta=payload.quantity,
             unit=payload.unit,
-            movement_type="purchase",
+            movement_type=InventoryMovementType.PURCHASE,
             actor_user_id=membership.user_id,
             source_type="inventory_lot",
+            operation="inventory_lot_create",
+            result_quantity_on_hand=payload.quantity,
         )
     )
     session.commit()
@@ -88,7 +102,12 @@ def list_lots(
 ) -> list[InventoryLot]:
     statement = select(InventoryLot).where(InventoryLot.household_id == membership.household_id)
     if not include_expired:
-        statement = statement.where(InventoryLot.available.is_(True))
+        statement = statement.where(
+            InventoryLot.available.is_(True),
+            or_(
+                InventoryLot.expiration_date.is_(None), InventoryLot.expiration_date >= date.today()
+            ),
+        )
     return list(
         session.scalars(
             statement.order_by(InventoryLot.expiration_date.nulls_last(), InventoryLot.id)
@@ -96,21 +115,52 @@ def list_lots(
     )
 
 
+def _adjustment_result(
+    session: Session, membership: HouseholdMember, movement: InventoryMovement
+) -> InventoryLotResult:
+    lot = _get_lot(session, membership, movement.lot_id)
+    if movement.result_quantity_on_hand is None:
+        raise DomainError(
+            "conflict", "Inventory replay unavailable", "The original result is unavailable.", 409
+        )
+    return InventoryLotResult(lot=lot, quantity_on_hand=movement.result_quantity_on_hand)
+
+
 def apply_adjustment(
     session: Session,
     membership: HouseholdMember,
     payload: InventoryAdjustment,
     idempotency_key: str | None,
-) -> InventoryLot:
+) -> InventoryLotResult:
+    operation = "inventory_adjustment"
+    fingerprint = operation_fingerprint(
+        operation,
+        {
+            "lot_id": str(payload.lot_id),
+            "delta": str(payload.delta),
+            "unit": payload.unit,
+            "movement_type": payload.movement_type.value,
+            "source_type": payload.source_type,
+            "source_id": str(payload.source_id) if payload.source_id else None,
+        },
+    )
     if idempotency_key:
         existing = session.scalar(
             select(InventoryMovement).where(
                 InventoryMovement.household_id == membership.household_id,
+                InventoryMovement.operation == operation,
                 InventoryMovement.idempotency_key == idempotency_key,
             )
         )
         if existing is not None:
-            return _get_lot(session, membership, existing.lot_id)
+            if existing.request_hash != fingerprint:
+                raise DomainError(
+                    "conflict",
+                    "Idempotency key conflict",
+                    "The key was already used for a different inventory operation.",
+                    409,
+                )
+            return _adjustment_result(session, membership, existing)
     lot = _get_lot(session, membership, payload.lot_id, lock=True)
     ingredient = session.get(Ingredient, lot.ingredient_id)
     if ingredient is None:
@@ -119,13 +169,14 @@ def apply_adjustment(
         )
     _validate_ingredient_unit(ingredient, payload.unit)
     try:
-        lot.quantity_on_hand = (
+        quantity = (
             LedgerBalance(Decimal(lot.quantity_on_hand), lot.unit)
             .apply(payload.delta, payload.unit)
             .amount
         )
     except ValueError as exc:
         raise DomainError("conflict", "Inventory balance conflict", str(exc), 409) from exc
+    lot.quantity_on_hand = quantity
     session.add(
         InventoryMovement(
             household_id=membership.household_id,
@@ -136,7 +187,10 @@ def apply_adjustment(
             actor_user_id=membership.user_id,
             source_type=payload.source_type,
             source_id=payload.source_id,
+            operation=operation,
             idempotency_key=idempotency_key,
+            request_hash=fingerprint if idempotency_key else None,
+            result_quantity_on_hand=quantity,
         )
     )
     try:
@@ -147,16 +201,24 @@ def apply_adjustment(
             existing = session.scalar(
                 select(InventoryMovement).where(
                     InventoryMovement.household_id == membership.household_id,
+                    InventoryMovement.operation == operation,
                     InventoryMovement.idempotency_key == idempotency_key,
                 )
             )
             if existing is not None:
-                return _get_lot(session, membership, existing.lot_id)
+                if existing.request_hash != fingerprint:
+                    raise DomainError(
+                        "conflict",
+                        "Idempotency key conflict",
+                        "The key was already used for a different inventory operation.",
+                        409,
+                    ) from exc
+                return _adjustment_result(session, membership, existing)
         raise DomainError(
             "conflict", "Inventory adjustment conflict", "The adjustment could not be applied.", 409
         ) from exc
     session.refresh(lot)
-    return lot
+    return InventoryLotResult(lot=lot, quantity_on_hand=quantity)
 
 
 def list_movements(
