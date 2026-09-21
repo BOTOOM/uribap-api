@@ -7,4 +7,4 @@ def test_foundation_migration_is_applied(integration_engine: Engine) -> None:
     with integration_engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
-    assert revision == "f4a7c9d1e203"
+    assert revision == "b5c9e1a3d407"
