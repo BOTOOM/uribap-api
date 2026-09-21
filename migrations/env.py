@@ -16,6 +16,7 @@ from uribap_api.infrastructure.persistence import (  # noqa: E402
     identity_models,
     ingredient_models,
     inventory_models,
+    planning_models,
     recipe_models,
 )
 
