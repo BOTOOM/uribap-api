@@ -82,9 +82,7 @@ class MealPlanEntry(Base):
     meal_type: Mapped[RecipeMealType] = mapped_column(
         Enum(RecipeMealType, native_enum=False, values_callable=enum_values), nullable=False
     )
-    recipe_version_id: Mapped[UUID] = mapped_column(
-        ForeignKey("recipe_version.id"), nullable=False
-    )
+    recipe_version_id: Mapped[UUID] = mapped_column(ForeignKey("recipe_version.id"), nullable=False)
     servings: Mapped[int] = mapped_column(Integer, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(Text)
@@ -125,7 +123,10 @@ class MealPlanOperation(Base):
     __tablename__ = "meal_plan_operation"
     __table_args__ = (
         UniqueConstraint(
-            "household_id", "operation", "idempotency_key", name="uq_meal_plan_operation_idempotency"
+            "household_id",
+            "operation",
+            "idempotency_key",
+            name="uq_meal_plan_operation_idempotency",
         ),
     )
 
