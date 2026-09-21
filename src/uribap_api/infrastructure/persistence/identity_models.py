@@ -51,7 +51,7 @@ class UserIdentity(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False, index=True
     )
     issuer: Mapped[str] = mapped_column(String(2048), nullable=False)
     subject: Mapped[str] = mapped_column(String(512), nullable=False)
