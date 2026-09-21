@@ -114,6 +114,10 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.CheckConstraint(
+            "from_state IS NULL OR from_state IN ('draft', 'proposed', 'approved', 'archived')",
+            name="ck_meal_plan_state_event_from_state",
+        ),
+        sa.CheckConstraint(
             "to_state IN ('draft', 'proposed', 'approved', 'archived')",
             name="ck_meal_plan_state_event_to_state",
         ),

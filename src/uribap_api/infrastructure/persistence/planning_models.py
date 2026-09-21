@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -100,6 +101,14 @@ class MealPlanStateEvent(Base):
             ["meal_plan_id", "household_id"],
             ["meal_plan.id", "meal_plan.household_id"],
             name="fk_meal_plan_state_event_plan_household",
+        ),
+        CheckConstraint(
+            "from_state IS NULL OR from_state IN ('draft', 'proposed', 'approved', 'archived')",
+            name="ck_meal_plan_state_event_from_state",
+        ),
+        CheckConstraint(
+            "to_state IN ('draft', 'proposed', 'approved', 'archived')",
+            name="ck_meal_plan_state_event_to_state",
         ),
     )
 
