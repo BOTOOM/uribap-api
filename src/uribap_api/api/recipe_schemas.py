@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -76,6 +77,35 @@ class RecipeCreate(BaseModel):
 class RecipeVersionCreate(BaseModel):
     base_servings: int = Field(default=1, gt=0)
     prep_minutes: int = Field(default=0, ge=0)
+
+
+class RecipeVersionIngredientUpsert(BaseModel):
+    ingredient_id: UUID
+    amount: Decimal = Field(gt=0)
+    unit: str = Field(min_length=1, max_length=8)
+    optional: bool = False
+
+
+class RecipeVersionIngredientLine(BaseModel):
+    id: UUID
+    ingredient_id: UUID
+    ingredient_name: str
+    amount: Decimal
+    unit: str
+    optional: bool
+
+
+class RecipeVersionIngredientsPut(BaseModel):
+    items: list[RecipeVersionIngredientUpsert] = Field(default_factory=list, max_length=100)
+
+
+class RecipeVersionDetailResponse(BaseModel):
+    recipe_id: UUID
+    version_number: int
+    state: RecipeVersionState
+    base_servings: int
+    prep_minutes: int
+    ingredients: list[RecipeVersionIngredientLine]
 
 
 class RecipePublishResponse(BaseModel):
