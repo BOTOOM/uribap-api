@@ -38,6 +38,8 @@ full list with safe local placeholders.
 
 - Liveness: `GET /api/v1/health/live` — process/routing only; use for the
   container healthcheck.
+- MCP: `POST /api/v1/mcp` — streamable-HTTP endpoint for external agents;
+  requires `Authorization: Bearer uribap_mcp_*` and shares this image.
 - Readiness: `GET /api/v1/health/ready` — requires a reachable database with
   `alembic_version` present; use for traffic switching.
 - Health output never contains connection strings, credentials, or stack
@@ -47,8 +49,9 @@ full list with safe local placeholders.
 
 1. Build/push the image for the new revision.
 2. Run migrations explicitly before switching traffic:
-   `uv run alembic upgrade head` inside a one-off container/exec, then verify
-   `uv run alembic check` reports no drift.
+   `alembic upgrade head` inside a one-off container/exec, then verify
+   `alembic check` reports no drift. (The image ships the venv on PATH; `uv`
+   is build-time only.)
 3. Start the new container; gate traffic on `/api/v1/health/ready`.
 4. Rollback: redeploy the previous image. Migrations are additive-only within
    a release; if a rollback crosses a schema change, restore from the
@@ -59,7 +62,7 @@ full list with safe local placeholders.
 Email intents accumulate in `email_outbox_entry`. Process them explicitly:
 
 ```bash
-uv run python -m uribap_api.tools.process_outbox --limit 50
+python -m uribap_api.tools.process_outbox --limit 50
 ```
 
 - With `EMAIL_DELIVERY_ENABLED=false` (current guarantee): each claimed row is

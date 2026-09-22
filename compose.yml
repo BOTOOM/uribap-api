@@ -34,7 +34,7 @@ services:
       db:
         condition: service_healthy
     command:
-      ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn uribap_api.main:app --app-dir src --host 0.0.0.0 --port 8000 --workers 1"]
+      ["sh", "-c", "alembic upgrade head && uvicorn uribap_api.main:app --app-dir src --host 0.0.0.0 --port 8000 --workers 1"]
     healthcheck:
       test:
         ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/live')"]
