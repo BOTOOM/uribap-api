@@ -17,6 +17,7 @@ from uribap_api.domain.shared.errors import DomainError
 from uribap_api.infrastructure.database import create_database_engine, create_session_factory
 from uribap_api.infrastructure.identity.jwt_validator import TokenValidator
 from uribap_api.infrastructure.logging import RequestIdMiddleware, configure_logging
+from uribap_api.infrastructure.security_headers import SecurityHeadersMiddleware
 
 settings = get_settings()
 
@@ -41,6 +42,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.add_middleware(RequestIdMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_cors_origins,
