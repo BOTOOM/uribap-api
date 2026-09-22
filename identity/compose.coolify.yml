@@ -1,0 +1,99 @@
+name: uribap-identity-prod
+
+# ZITADEL for Coolify. Deploy as a "Docker Compose" resource. No embedded
+# proxy or database: Coolify's Traefik terminates TLS and the shared
+# PostgreSQL resource provides storage (enable "Connect to Predefined
+# Network" on this stack pointing at the Postgres network).
+#
+# Domain mapping (set in the Coolify UI per service):
+#   zitadel-api    -> https://auth.example.com            (all paths)
+#   zitadel-login  -> https://auth.example.com/ui/v2/login (login console)
+#
+# Required environment variables (Coolify secret env storage):
+#   ZITADEL_VERSION=4.16.0
+#   ZITADEL_DOMAIN=auth.example.com
+#   ZITADEL_MASTERKEY=<32+ random chars>
+#   POSTGRES_HOST=<shared postgres service name, e.g. postgresql-abc123>
+#   POSTGRES_ADMIN_PASSWORD=<postgres superuser password>
+#   ZITADEL_DB_PASSWORD=<password Zitadel will set for its own db user>
+#   ZITADEL_ADMIN_USERNAME / ZITADEL_ADMIN_PASSWORD  (first org admin login)
+#   ZITADEL_SMTP_HOST / ZITADEL_SMTP_USER / ZITADEL_SMTP_PASSWORD / ZITADEL_SMTP_FROM
+
+services:
+  zitadel-api:
+    image: ghcr.io/zitadel/zitadel:v${ZITADEL_VERSION:-4.16.0}
+    restart: unless-stopped
+    command: start-from-init --masterkey "${ZITADEL_MASTERKEY}" --tlsMode external
+    environment:
+      ZITADEL_PORT: 8080
+      ZITADEL_EXTERNALDOMAIN: ${ZITADEL_DOMAIN}
+      ZITADEL_EXTERNALPORT: 443
+      ZITADEL_EXTERNALSECURE: "true"
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_DATABASE_POSTGRES_HOST: ${POSTGRES_HOST}
+      ZITADEL_DATABASE_POSTGRES_PORT: 5432
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: ${ZITADEL_DB_PASSWORD}
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: ${ZITADEL_ADMIN_USERNAME}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${ZITADEL_ADMIN_PASSWORD}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+      ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /zitadel/bootstrap/login-client.pat
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME: login-client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: Uribap login client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: ${LOGIN_CLIENT_PAT_EXPIRATION:-2030-01-01T00:00:00Z}
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "true"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI: https://${ZITADEL_DOMAIN}/ui/v2/login/
+      ZITADEL_OIDC_DEFAULTLOGINURLV2: https://${ZITADEL_DOMAIN}/ui/v2/login/login?authRequest=
+      ZITADEL_OIDC_DEFAULTLOGOUTURLV2: https://${ZITADEL_DOMAIN}/ui/v2/login/logout?post_logout_redirect=
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_HOST: ${ZITADEL_SMTP_HOST}
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_USER: ${ZITADEL_SMTP_USER}
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_PASSWORD: ${ZITADEL_SMTP_PASSWORD}
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_TLS: "true"
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROM: ${ZITADEL_SMTP_FROM}
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROMNAME: ${ZITADEL_SMTP_FROMNAME:-Uribap}
+      ZITADEL_LOGSTORE_ACCESS_STDOUT_ENABLED: "true"
+      ZITADEL_CACHES_CONNECTORS_REDIS_ENABLED: "false"
+    expose:
+      - 8080
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      start_period: 30s
+    volumes:
+      - zitadel-bootstrap:/zitadel/bootstrap:rw
+    labels:
+      # Zitadel serves h2c (HTTP/2 cleartext) gRPC+HTTP on the same port;
+      # Traefik must speak h2c upstream.
+      - traefik.http.services.zitadel-api.loadbalancer.server.scheme=h2c
+
+  zitadel-login:
+    image: ghcr.io/zitadel/zitadel-login:v${ZITADEL_VERSION:-4.16.0}
+    restart: unless-stopped
+    environment:
+      ZITADEL_API_URL: http://zitadel-api:8080
+      NEXT_PUBLIC_BASE_PATH: /ui/v2/login
+      ZITADEL_SERVICE_USER_TOKEN_FILE: /zitadel/bootstrap/login-client.pat
+      CUSTOM_REQUEST_HEADERS: Host:${ZITADEL_DOMAIN},X-Forwarded-Proto:https
+    expose:
+      - 3000
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "node /app/healthcheck.mjs http://localhost:3000/ui/v2/login/healthy"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      start_period: 20s
+    volumes:
+      - zitadel-bootstrap:/zitadel/bootstrap:ro
+    depends_on:
+      zitadel-api:
+        condition: service_healthy
+
+volumes:
+  zitadel-bootstrap:
