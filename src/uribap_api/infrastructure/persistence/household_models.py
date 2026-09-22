@@ -41,6 +41,7 @@ class OutboxStatus(StrEnum):
     PENDING = "pending"
     SENT = "sent"
     FAILED = "failed"
+    SUPPRESSED = "suppressed"
 
 
 class Household(Base):
