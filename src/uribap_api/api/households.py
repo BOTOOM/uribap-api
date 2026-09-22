@@ -9,6 +9,12 @@ from uribap_api.api.dependencies import (
     request_id,
     require_household_membership,
 )
+from uribap_api.api.event_schemas import (
+    ActivityEntry,
+    ActivityFeedResponse,
+    OutboxSummary,
+)
+from uribap_api.api.inventory_schemas import ProblemDetails
 from uribap_api.api.schemas import (
     HouseholdCreate,
     HouseholdResponse,
@@ -20,6 +26,7 @@ from uribap_api.api.schemas import (
     MembershipResponse,
     PageInfo,
 )
+from uribap_api.application.event_service import list_activity
 from uribap_api.application.household_service import (
     create_household,
     get_household,
@@ -33,6 +40,13 @@ from uribap_api.infrastructure.persistence.household_models import Household, Ho
 from uribap_api.infrastructure.persistence.identity_models import AppUser
 
 router = APIRouter(prefix="/households", tags=["households"])
+
+ERROR_RESPONSES: dict[int | str, dict[str, object]] = {
+    401: {"model": ProblemDetails},
+    403: {"model": ProblemDetails},
+    404: {"model": ProblemDetails},
+    422: {"model": ProblemDetails},
+}
 
 
 def household_response(household: Household) -> HouseholdResponse:
@@ -119,6 +133,44 @@ def update(
             expected_version=if_match,
             request_id=correlation_id,
         )
+    )
+
+
+@router.get(
+    "/{household_id}/activity",
+    response_model=ActivityFeedResponse,
+    responses=ERROR_RESPONSES,
+)
+def activity(
+    household_id: UUID,
+    page: int = 1,
+    page_size: int = 20,
+    membership: HouseholdMember = Depends(require_household_membership()),
+    session: Session = Depends(get_session),
+) -> ActivityFeedResponse:
+    entries, has_more, summary = list_activity(
+        session,
+        membership,
+        page=max(page, 1),
+        page_size=min(max(page_size, 1), 100),
+    )
+    return ActivityFeedResponse(
+        entries=[
+            ActivityEntry(
+                id=event.id,
+                kind=event.kind,
+                occurred_at=event.occurred_at,
+                actor_user_id=event.actor_user_id,
+                aggregate_type=event.aggregate_type,
+                aggregate_id=event.aggregate_id,
+                payload=event.payload,
+            )
+            for event in entries
+        ],
+        page=max(page, 1),
+        page_size=min(max(page_size, 1), 100),
+        has_more=has_more,
+        outbox=OutboxSummary(**summary),
     )
 
 

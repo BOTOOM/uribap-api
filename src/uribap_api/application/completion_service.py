@@ -13,6 +13,7 @@ from uribap_api.api.completion_schemas import (
     MealCompletionLineResponse,
     MealCompletionResponse,
 )
+from uribap_api.application.event_service import record_event
 from uribap_api.domain.completion.policies import (
     ActualLineInput,
     ConsumptionLine,
@@ -27,6 +28,7 @@ from uribap_api.domain.completion.policies import (
     fefo_allocate,
     planned_lines,
 )
+from uribap_api.domain.events.policies import DomainEventKind
 from uribap_api.domain.inventory.ledger import (
     InventoryLedgerError,
     InventoryMovementType,
@@ -484,6 +486,18 @@ def complete_entry(
             session.add(line_row)
             session.flush()
             _deduct_line(session, membership, line, line_row.id, operation)
+        record_event(
+            session,
+            household_id=membership.household_id,
+            kind=DomainEventKind.MEAL_COMPLETED,
+            actor_user_id=membership.user_id,
+            aggregate_type="meal_completion",
+            aggregate_id=completion.id,
+            payload={
+                "meal_plan_entry_id": str(entry_id),
+                "line_count": len(lines),
+            },
+        )
         result = _completion_payload(session, completion)
         _store_receipt(session, membership, operation, idempotency_key, fingerprint, result)
         replay = _commit_or_replay(
@@ -620,6 +634,19 @@ def correct_line(
         session.flush()
         _deduct_line(session, membership, corrected, line.id, operation)
         line.actual_amount = corrected.actual_amount
+        record_event(
+            session,
+            household_id=membership.household_id,
+            kind=DomainEventKind.MEAL_LINE_CORRECTED,
+            actor_user_id=membership.user_id,
+            aggregate_type="meal_completion",
+            aggregate_id=completion.id,
+            payload={
+                "line_id": str(line.id),
+                "actual_amount": str(corrected.actual_amount),
+                "unit": line.unit,
+            },
+        )
         session.flush()
         result = _completion_payload(session, completion)
         _store_receipt(session, membership, operation, idempotency_key, fingerprint, result)
@@ -694,6 +721,15 @@ def reopen_completion(
     try:
         for line in lines:
             _reverse_line_consumption(session, membership, line.id, operation)
+        record_event(
+            session,
+            household_id=membership.household_id,
+            kind=DomainEventKind.MEAL_REOPENED,
+            actor_user_id=membership.user_id,
+            aggregate_type="meal_completion",
+            aggregate_id=completion.id,
+            payload={"meal_plan_entry_id": str(completion.meal_plan_entry_id)},
+        )
         session.flush()
         result = _completion_payload(session, completion)
         _store_receipt(session, membership, operation, idempotency_key, fingerprint, result)

@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from uribap_api.api.schemas import InvitationCreate
 from uribap_api.application.audit_service import record_audit
+from uribap_api.application.event_service import record_event
+from uribap_api.domain.events.policies import DomainEventKind
 from uribap_api.domain.identity.policies import (
     InvitationStatus,
     MembershipRole,
@@ -88,6 +90,15 @@ def create_invitation(
         target_id=invitation.id,
         metadata={"role": payload.role},
     )
+    record_event(
+        session,
+        household_id=household_id,
+        kind=DomainEventKind.INVITATION_CREATED,
+        actor_user_id=inviter.user_id,
+        aggregate_type="household_invitation",
+        aggregate_id=invitation.id,
+        payload={"role": payload.role},
+    )
     session.commit()
     session.refresh(invitation)
     return invitation, token.raw, outbox
@@ -137,6 +148,14 @@ def revoke_invitation(
         request_id=request_id,
         target_type="invitation",
         target_id=invitation.id,
+    )
+    record_event(
+        session,
+        household_id=household_id,
+        kind=DomainEventKind.INVITATION_REVOKED,
+        actor_user_id=actor.user_id,
+        aggregate_type="household_invitation",
+        aggregate_id=invitation.id,
     )
     session.commit()
 
@@ -222,6 +241,23 @@ def accept_invitation(
         request_id=request_id,
         target_type="invitation",
         target_id=invitation.id,
+    )
+    record_event(
+        session,
+        household_id=invitation.household_id,
+        kind=DomainEventKind.INVITATION_ACCEPTED,
+        actor_user_id=user.id,
+        aggregate_type="household_invitation",
+        aggregate_id=invitation.id,
+    )
+    record_event(
+        session,
+        household_id=invitation.household_id,
+        kind=DomainEventKind.MEMBER_ADDED,
+        actor_user_id=user.id,
+        aggregate_type="household_member",
+        aggregate_id=member.id,
+        payload={"role": member.role.value},
     )
     session.commit()
     session.refresh(member)

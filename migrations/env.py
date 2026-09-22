@@ -13,6 +13,7 @@ from uribap_api.config import get_settings  # noqa: E402
 from uribap_api.infrastructure.persistence.base import Base  # noqa: E402
 from uribap_api.infrastructure.persistence import (  # noqa: E402
     completion_models,
+    event_models,
     household_models,
     identity_models,
     ingredient_models,
