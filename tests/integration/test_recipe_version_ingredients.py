@@ -1,3 +1,4 @@
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -6,8 +7,8 @@ from sqlalchemy.orm import Session
 from uribap_api.api.recipe_schemas import (
     RecipeCreate,
     RecipeVersionCreate,
-    RecipeVersionIngredientUpsert,
     RecipeVersionIngredientsPut,
+    RecipeVersionIngredientUpsert,
 )
 from uribap_api.application.recipe_service import (
     create_recipe,
@@ -81,10 +82,10 @@ def test_replace_version_ingredients_writes_lines_in_position_order(
             RecipeVersionIngredientsPut(
                 items=[
                     RecipeVersionIngredientUpsert(
-                        ingredient_id=chicken.id, amount="800", unit="g"
+                        ingredient_id=chicken.id, amount=Decimal("800"), unit="g"
                     ),
                     RecipeVersionIngredientUpsert(
-                        ingredient_id=rice.id, amount="300", unit="g", optional=True
+                        ingredient_id=rice.id, amount=Decimal("300"), unit="g", optional=True
                     ),
                 ]
             ),
@@ -111,7 +112,11 @@ def test_replace_version_ingredients_replaces_existing_lines(integration_engine)
             recipe.id,
             1,
             RecipeVersionIngredientsPut(
-                items=[RecipeVersionIngredientUpsert(ingredient_id=rice.id, amount="1", unit="kg")]
+                items=[
+                    RecipeVersionIngredientUpsert(
+                        ingredient_id=rice.id, amount=Decimal("1"), unit="kg"
+                    )
+                ]
             ),
         )
         replace_version_ingredients(
@@ -120,7 +125,11 @@ def test_replace_version_ingredients_replaces_existing_lines(integration_engine)
             recipe.id,
             1,
             RecipeVersionIngredientsPut(
-                items=[RecipeVersionIngredientUpsert(ingredient_id=oil.id, amount="50", unit="g")]
+                items=[
+                    RecipeVersionIngredientUpsert(
+                        ingredient_id=oil.id, amount=Decimal("50"), unit="g"
+                    )
+                ]
             ),
         )
 
@@ -144,7 +153,7 @@ def test_replace_version_ingredients_rejects_wrong_unit_dimension(integration_en
                 RecipeVersionIngredientsPut(
                     items=[
                         RecipeVersionIngredientUpsert(
-                            ingredient_id=rice.id, amount="1", unit="ml"
+                            ingredient_id=rice.id, amount=Decimal("1"), unit="ml"
                         )
                     ]
                 ),
@@ -168,7 +177,7 @@ def test_replace_version_ingredients_rejects_foreign_ingredient(integration_engi
                 RecipeVersionIngredientsPut(
                     items=[
                         RecipeVersionIngredientUpsert(
-                            ingredient_id=foreign.id, amount="1", unit="kg"
+                            ingredient_id=foreign.id, amount=Decimal("1"), unit="kg"
                         )
                     ]
                 ),
@@ -192,7 +201,7 @@ def test_replace_version_ingredients_rejects_published_version(integration_engin
                 RecipeVersionIngredientsPut(
                     items=[
                         RecipeVersionIngredientUpsert(
-                            ingredient_id=rice.id, amount="1", unit="kg"
+                            ingredient_id=rice.id, amount=Decimal("1"), unit="kg"
                         )
                     ]
                 ),
@@ -213,5 +222,8 @@ def test_list_recipes_returns_latest_version_per_recipe(integration_engine) -> N
         rows = list_recipes(session, member, query=None, archived=False, limit=50)
 
         latest_by_recipe = {item.id: latest for item, latest in rows}
-        assert latest_by_recipe[recipe.id].version_number == 2
-        assert latest_by_recipe[other.id].version_number == 1
+        recipe_latest = latest_by_recipe[recipe.id]
+        other_latest = latest_by_recipe[other.id]
+        assert recipe_latest is not None and other_latest is not None
+        assert recipe_latest.version_number == 2
+        assert other_latest.version_number == 1
