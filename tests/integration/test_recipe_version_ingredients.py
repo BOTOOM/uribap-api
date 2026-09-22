@@ -5,12 +5,15 @@ from sqlalchemy.orm import Session
 
 from uribap_api.api.recipe_schemas import (
     RecipeCreate,
+    RecipeVersionCreate,
     RecipeVersionIngredientUpsert,
     RecipeVersionIngredientsPut,
 )
 from uribap_api.application.recipe_service import (
     create_recipe,
+    create_version,
     get_version,
+    list_recipes,
     list_version_ingredients,
     publish_version,
     replace_version_ingredients,
@@ -195,3 +198,20 @@ def test_replace_version_ingredients_rejects_published_version(integration_engin
                 ),
             )
         assert excinfo.value.status_code == 409
+
+
+def test_list_recipes_returns_latest_version_per_recipe(integration_engine) -> None:
+    with Session(integration_engine) as session:
+        member = _member(session)
+        recipe, version = _draft_version(session, member)
+        publish_version(session, member, recipe.id, version.version_number)
+        create_version(
+            session, member, recipe.id, RecipeVersionCreate(base_servings=2, prep_minutes=15)
+        )
+        other, _ = _draft_version(session, member)
+
+        rows = list_recipes(session, member, query=None, archived=False, limit=50)
+
+        latest_by_recipe = {item.id: latest for item, latest in rows}
+        assert latest_by_recipe[recipe.id].version_number == 2
+        assert latest_by_recipe[other.id].version_number == 1

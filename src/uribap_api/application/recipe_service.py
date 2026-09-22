@@ -62,13 +62,6 @@ def list_recipes(
     archived: bool,
     limit: int,
 ) -> list[tuple[Recipe, RecipeVersion | None]]:
-    latest = (
-        select(RecipeVersion)
-        .where(RecipeVersion.recipe_id == Recipe.id)
-        .order_by(desc(RecipeVersion.version_number))
-        .limit(1)
-        .scalar_subquery()
-    )
     statement = select(Recipe).where(Recipe.household_id == membership.household_id)
     if not archived:
         statement = statement.where(Recipe.archived_at.is_(None))
@@ -80,7 +73,15 @@ def list_recipes(
         session.scalars(statement.order_by(Recipe.normalized_name).limit(min(limit, 100)))
     )
     return [
-        (recipe, session.scalar(select(RecipeVersion).where(RecipeVersion.id == latest)))
+        (
+            recipe,
+            session.scalar(
+                select(RecipeVersion)
+                .where(RecipeVersion.recipe_id == recipe.id)
+                .order_by(desc(RecipeVersion.version_number))
+                .limit(1)
+            ),
+        )
         for recipe in recipes
     ]
 
