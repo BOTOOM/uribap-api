@@ -1,6 +1,103 @@
 {
   "components": {
     "schemas": {
+      "ActivityEntry": {
+        "properties": {
+          "actorUserId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actoruserid"
+          },
+          "aggregateId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aggregateid"
+          },
+          "aggregateType": {
+            "title": "Aggregatetype",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "title": "Occurredat",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "occurredAt",
+          "actorUserId",
+          "aggregateType",
+          "aggregateId",
+          "payload"
+        ],
+        "title": "ActivityEntry",
+        "type": "object"
+      },
+      "ActivityFeedResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "hasMore": {
+            "title": "Hasmore",
+            "type": "boolean"
+          },
+          "outbox": {
+            "$ref": "#/components/schemas/OutboxSummary"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "title": "Pagesize",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entries",
+          "page",
+          "pageSize",
+          "hasMore",
+          "outbox"
+        ],
+        "title": "ActivityFeedResponse",
+        "type": "object"
+      },
       "CompletionActualLine": {
         "properties": {
           "actual_amount": {
@@ -1910,6 +2007,32 @@
         "title": "MembershipResponse",
         "type": "object"
       },
+      "OutboxSummary": {
+        "properties": {
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "pending": {
+            "default": 0,
+            "title": "Pending",
+            "type": "integer"
+          },
+          "sent": {
+            "default": 0,
+            "title": "Sent",
+            "type": "integer"
+          },
+          "suppressed": {
+            "default": 0,
+            "title": "Suppressed",
+            "type": "integer"
+          }
+        },
+        "title": "OutboxSummary",
+        "type": "object"
+      },
       "PageInfo": {
         "properties": {
           "limit": {
@@ -3404,6 +3527,104 @@
           }
         ],
         "summary": "Update",
+        "tags": [
+          "households"
+        ]
+      }
+    },
+    "/api/v1/households/{household_id}/activity": {
+      "get": {
+        "operationId": "activity_api_v1_households__household_id__activity_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "household_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Household Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityFeedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Activity",
         "tags": [
           "households"
         ]

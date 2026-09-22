@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     smtp_from: str = "uribap@localhost"
     smtp_use_tls: bool = False
     smtp_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
+    email_delivery_enabled: bool = False
     web_base_url: str = "http://localhost:3000"
 
     @model_validator(mode="after")

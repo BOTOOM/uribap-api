@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from uribap_api.api.schemas import HouseholdCreate, HouseholdUpdate, MemberRoleUpdate
 from uribap_api.application.audit_service import record_audit
+from uribap_api.application.event_service import record_event
+from uribap_api.domain.events.policies import DomainEventKind
 from uribap_api.domain.identity.policies import (
     MembershipRole,
     MembershipStatus,
@@ -46,6 +48,15 @@ def create_household(
         request_id=request_id,
         target_type="household",
         target_id=household.id,
+    )
+    record_event(
+        session,
+        household_id=household.id,
+        kind=DomainEventKind.MEMBER_ADDED,
+        actor_user_id=user.id,
+        aggregate_type="household_member",
+        aggregate_id=membership.id,
+        payload={"role": membership.role.value},
     )
     session.commit()
     session.refresh(household)
@@ -201,5 +212,14 @@ def revoke_member(
         request_id=request_id,
         target_type="user",
         target_id=target.user_id,
+    )
+    record_event(
+        session,
+        household_id=household_id,
+        kind=DomainEventKind.MEMBER_REMOVED,
+        actor_user_id=actor.user_id,
+        aggregate_type="household_member",
+        aggregate_id=target.id,
+        payload={"role": target.role.value},
     )
     session.commit()

@@ -15,7 +15,9 @@ from uribap_api.api.plan_schemas import (
     MealPlanStateEventResponse,
     MealPlanTransition,
 )
+from uribap_api.application.event_service import record_event
 from uribap_api.application.preparation_service import reconcile_derived_tasks
+from uribap_api.domain.events.policies import DomainEventKind
 from uribap_api.domain.planning.policies import (
     MealPlanAction,
     MealPlanningError,
@@ -651,6 +653,26 @@ def transition_plan(
         )
         if action == MealPlanAction.APPROVE:
             reconcile_derived_tasks(session, membership, plan)
+        if target == MealPlanState.APPROVED:
+            record_event(
+                session,
+                household_id=membership.household_id,
+                kind=DomainEventKind.PLAN_APPROVED,
+                actor_user_id=membership.user_id,
+                aggregate_type="meal_plan",
+                aggregate_id=plan.id,
+                payload={"week_start": str(plan.week_start_date)},
+            )
+        elif action == MealPlanAction.REOPEN and target == MealPlanState.DRAFT:
+            record_event(
+                session,
+                household_id=membership.household_id,
+                kind=DomainEventKind.PLAN_REOPENED,
+                actor_user_id=membership.user_id,
+                aggregate_type="meal_plan",
+                aggregate_id=plan.id,
+                payload={"week_start": str(plan.week_start_date)},
+            )
         session.flush()
         result = _plan_payload(session, membership, plan)
         _store_receipt(session, membership, operation, idempotency_key, fingerprint, result)

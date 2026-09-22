@@ -13,6 +13,8 @@ from uribap_api.api.preparation_schemas import (
     PreparationTaskCreate,
     PreparationTaskResponse,
 )
+from uribap_api.application.event_service import record_event
+from uribap_api.domain.events.policies import DomainEventKind
 from uribap_api.domain.ingredients.policies import validate_unit_for_dimension
 from uribap_api.domain.preparation.policies import (
     PreparationError,
@@ -347,6 +349,22 @@ def transition_task(
     if task.status == PreparationTaskStatus.COMPLETED:
         task.completed_by_user_id = membership.user_id
         task.completed_at = datetime.now(UTC)
+    if task.status == PreparationTaskStatus.COMPLETED:
+        event_kind = DomainEventKind.PREPARATION_COMPLETED
+    elif task.status == PreparationTaskStatus.CANCELLED:
+        event_kind = DomainEventKind.PREPARATION_CANCELLED
+    else:
+        event_kind = None
+    if event_kind is not None:
+        record_event(
+            session,
+            household_id=membership.household_id,
+            kind=event_kind,
+            actor_user_id=membership.user_id,
+            aggregate_type="preparation_task",
+            aggregate_id=task.id,
+            payload={"task_type": task.task_type.value},
+        )
     try:
         session.flush()
         result = _task_payload(session, membership, task)

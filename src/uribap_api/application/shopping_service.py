@@ -13,7 +13,9 @@ from uribap_api.api.shopping_schemas import (
     ShoppingListResponse,
     ShoppingPurchase,
 )
+from uribap_api.application.event_service import record_event
 from uribap_api.application.forecast_service import demand_forecast
+from uribap_api.domain.events.policies import DomainEventKind
 from uribap_api.domain.inventory.ledger import InventoryMovementType
 from uribap_api.domain.shared.errors import DomainError
 from uribap_api.domain.shared.fingerprint import operation_fingerprint
@@ -415,6 +417,19 @@ def purchase_item(
         if payload.notes is not None:
             item.notes = payload.notes
         shopping_list.version += 1
+        record_event(
+            session,
+            household_id=membership.household_id,
+            kind=DomainEventKind.SHOPPING_PURCHASED,
+            actor_user_id=membership.user_id,
+            aggregate_type="shopping_item",
+            aggregate_id=item.id,
+            payload={
+                "list_id": str(shopping_list.id),
+                "quantity": str(payload.quantity),
+                "unit": item.unit,
+            },
+        )
         session.flush()
         result = _list_payload(session, membership, shopping_list)
         _store_receipt(session, membership, operation, idempotency_key, fingerprint, result)
