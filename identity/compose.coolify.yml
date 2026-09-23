@@ -59,6 +59,12 @@ services:
       ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROMNAME: ${ZITADEL_SMTP_FROMNAME:-Uribap}
       ZITADEL_LOGSTORE_ACCESS_STDOUT_ENABLED: "true"
       ZITADEL_CACHES_CONNECTORS_REDIS_ENABLED: "false"
+    # Coolify joins its own stack network automatically for ingress;
+    # `coolify` is the shared destination network where the standalone
+    # PostgreSQL resource lives. Declared explicitly because the UI
+    # "Connect to predefined network" toggle is unreliable in some versions.
+    networks:
+      - coolify
     expose:
       - 8080
     healthcheck:
@@ -83,6 +89,8 @@ services:
       NEXT_PUBLIC_BASE_PATH: /ui/v2/login
       ZITADEL_SERVICE_USER_TOKEN_FILE: /zitadel/bootstrap/login-client.pat
       CUSTOM_REQUEST_HEADERS: Host:${ZITADEL_DOMAIN},X-Forwarded-Proto:https
+    networks:
+      - coolify
     expose:
       - 3000
     healthcheck:
@@ -96,6 +104,11 @@ services:
     depends_on:
       zitadel-api:
         condition: service_healthy
+
+networks:
+  coolify:
+    external: true
+    name: coolify
 
 volumes:
   zitadel-bootstrap:
