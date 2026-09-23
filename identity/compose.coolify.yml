@@ -103,6 +103,18 @@ services:
       start_period: 20s
     volumes:
       - zitadel-bootstrap:/zitadel/bootstrap:ro
+    labels:
+      # Coolify auto-adds a StripPrefix middleware to path-based domains, but
+      # this app serves under basePath /ui/v2/login and 404s without it.
+      # This router has explicit higher priority and forwards the path intact.
+      - 'traefik.http.routers.zitadel-login-path.rule=Host(`${ZITADEL_DOMAIN}`) && PathPrefix(`/ui/v2/login`)'
+      - 'traefik.http.routers.zitadel-login-path.entryPoints=https'
+      - 'traefik.http.routers.zitadel-login-path.tls=true'
+      - 'traefik.http.routers.zitadel-login-path.tls.certresolver=letsencrypt'
+      - 'traefik.http.routers.zitadel-login-path.priority=1000'
+      - 'traefik.http.routers.zitadel-login-path.middlewares=gzip'
+      - 'traefik.http.routers.zitadel-login-path.service=zitadel-login-path'
+      - 'traefik.http.services.zitadel-login-path.loadbalancer.server.port=3000'
     depends_on:
       zitadel-api:
         condition: service_healthy
