@@ -10,7 +10,7 @@ name: uribap-identity-prod
 #   zitadel-login  -> https://auth.example.com/ui/v2/login (login console)
 #
 # Required environment variables (Coolify secret env storage):
-#   ZITADEL_VERSION=4.16.0
+#   ZITADEL_VERSION=v4.16.0   (full tag WITH the v prefix, as in .env.identity)
 #   ZITADEL_DOMAIN=auth.example.com
 #   ZITADEL_MASTERKEY=<32+ random chars>
 #   POSTGRES_HOST=<shared postgres service name, e.g. postgresql-abc123>
@@ -21,8 +21,9 @@ name: uribap-identity-prod
 
 services:
   zitadel-api:
-    image: ghcr.io/zitadel/zitadel:v${ZITADEL_VERSION:-4.16.0}
+    image: ghcr.io/zitadel/zitadel:${ZITADEL_VERSION:-v4.16.0}
     restart: unless-stopped
+    user: "0"
     command: start-from-init --masterkey "${ZITADEL_MASTERKEY}" --tlsMode external
     environment:
       ZITADEL_PORT: 8080
@@ -74,8 +75,9 @@ services:
       - traefik.http.services.zitadel-api.loadbalancer.server.scheme=h2c
 
   zitadel-login:
-    image: ghcr.io/zitadel/zitadel-login:v${ZITADEL_VERSION:-4.16.0}
+    image: ghcr.io/zitadel/zitadel-login:${ZITADEL_VERSION:-v4.16.0}
     restart: unless-stopped
+    user: "0"
     environment:
       ZITADEL_API_URL: http://zitadel-api:8080
       NEXT_PUBLIC_BASE_PATH: /ui/v2/login
