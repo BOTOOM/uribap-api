@@ -52,7 +52,10 @@ def _get_lot(
 
 
 def create_lot(
-    session: Session, membership: HouseholdMember, payload: InventoryLotCreate
+    session: Session,
+    membership: HouseholdMember,
+    payload: InventoryLotCreate,
+    idempotency_key: str | None = None,
 ) -> InventoryLot:
     ingredient = session.get(Ingredient, payload.ingredient_id)
     if ingredient is None or ingredient.archived_at is not None:
@@ -67,6 +70,35 @@ def create_lot(
             403,
         )
     _validate_ingredient_unit(ingredient, payload.unit)
+    operation = "inventory_lot_create"
+    fingerprint = operation_fingerprint(
+        operation,
+        {
+            "ingredient_id": str(payload.ingredient_id),
+            "quantity": str(payload.quantity),
+            "unit": payload.unit,
+            "location": payload.location.value,
+            "expiration_date": str(payload.expiration_date),
+            "notes": payload.notes,
+        },
+    )
+    if idempotency_key:
+        existing = session.scalar(
+            select(InventoryMovement).where(
+                InventoryMovement.household_id == membership.household_id,
+                InventoryMovement.operation == operation,
+                InventoryMovement.idempotency_key == idempotency_key,
+            )
+        )
+        if existing is not None:
+            if existing.request_hash != fingerprint:
+                raise DomainError(
+                    "conflict",
+                    "Idempotency key conflict",
+                    "The key was already used for a different inventory operation.",
+                    409,
+                )
+            return _get_lot(session, membership, existing.lot_id)
     lot = InventoryLot(
         household_id=membership.household_id,
         ingredient_id=payload.ingredient_id,
@@ -88,11 +120,33 @@ def create_lot(
             movement_type=InventoryMovementType.PURCHASE,
             actor_user_id=membership.user_id,
             source_type="inventory_lot",
-            operation="inventory_lot_create",
+            operation=operation,
+            idempotency_key=idempotency_key,
+            request_hash=fingerprint if idempotency_key else None,
             result_quantity_on_hand=payload.quantity,
         )
     )
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        if not idempotency_key:
+            raise
+        existing = session.scalar(
+            select(InventoryMovement).where(
+                InventoryMovement.household_id == membership.household_id,
+                InventoryMovement.operation == operation,
+                InventoryMovement.idempotency_key == idempotency_key,
+            )
+        )
+        if existing is None or existing.request_hash != fingerprint:
+            raise DomainError(
+                "conflict",
+                "Idempotency key conflict",
+                "The key was already used for a different inventory operation.",
+                409,
+            ) from exc
+        return _get_lot(session, membership, existing.lot_id)
     session.refresh(lot)
     return lot
 

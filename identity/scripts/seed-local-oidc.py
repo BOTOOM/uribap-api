@@ -8,11 +8,15 @@ from typing import NoReturn
 import httpx
 
 IDENTITY_DIR = Path(__file__).resolve().parents[1]
-OUTPUT_FILE = IDENTITY_DIR / ".env.oidc.local"
+OUTPUT_FILE = Path(os.environ.get("SEED_OUTPUT_FILE", str(IDENTITY_DIR / ".env.oidc.local")))
 ISSUER = os.environ.get("OIDC_ISSUER", "http://localhost:8080").rstrip("/")
 ADMIN_TOKEN = os.environ.get("ZITADEL_ADMIN_TOKEN", "")
 PROJECT_NAME = os.environ.get("ZITADEL_LOCAL_PROJECT_NAME", "Uribap Local")
 WEB_CLIENT_NAME = os.environ.get("ZITADEL_LOCAL_WEB_CLIENT_NAME", "Uribap Web Local")
+WEB_BASE_URL = os.environ.get("WEB_BASE_URL", "http://localhost:3000").rstrip("/")
+DEV_MODE = WEB_BASE_URL.startswith("http://localhost") or WEB_BASE_URL.startswith(
+    "http://127.0.0.1"
+)
 
 
 def fail(message: str) -> NoReturn:
@@ -75,8 +79,12 @@ def main() -> int:
                 json={
                     "name": WEB_CLIENT_NAME,
                     "redirectUris": [
-                        "http://localhost:3000/api/auth/callback/zitadel",
-                        "http://127.0.0.1:3000/api/auth/callback/zitadel",
+                        f"{WEB_BASE_URL}/api/auth/callback/zitadel",
+                        *(
+                            ["http://127.0.0.1:3000/api/auth/callback/zitadel"]
+                            if DEV_MODE
+                            else []
+                        ),
                     ],
                     "responseTypes": ["OIDC_RESPONSE_TYPE_CODE"],
                     "grantTypes": [
@@ -86,11 +94,11 @@ def main() -> int:
                     "appType": "OIDC_APP_TYPE_WEB",
                     "authMethodType": "OIDC_AUTH_METHOD_TYPE_BASIC",
                     "postLogoutRedirectUris": [
-                        "http://localhost:3000/",
-                        "http://127.0.0.1:3000/",
+                        f"{WEB_BASE_URL}/",
+                        *(["http://127.0.0.1:3000/"] if DEV_MODE else []),
                     ],
                     "version": "OIDC_VERSION_1_0",
-                    "devMode": True,
+                    "devMode": DEV_MODE,
                     "accessTokenType": "OIDC_TOKEN_TYPE_BEARER",
                     "skipNativeAppSuccessPage": True,
                 },

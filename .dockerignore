@@ -13,3 +13,13 @@ htmlcov
 .env.*
 !.env.example
 *.log
+tests
+specs
+docs
+identity
+openapi
+.github
+compose*.yml
+Dockerfile
+.dockerignore
+*.md

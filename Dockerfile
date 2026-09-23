@@ -1,24 +1,40 @@
-FROM python:3.14-slim AS runtime
+# syntax=docker/dockerfile:1
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+FROM python:3.14-alpine AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:0.11.12 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.12 /uv /uvx /usr/local/bin/
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_NO_CACHE=1 \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
 
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-COPY src ./src
-COPY migrations ./migrations
-COPY alembic.ini ./alembic.ini
 
-RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
-USER appuser
+FROM python:3.14-alpine AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+
+RUN addgroup -S -g 10001 app && adduser -S -u 10001 -G app app
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --chown=app:app src ./src
+COPY --chown=app:app migrations ./migrations
+COPY --chown=app:app alembic.ini ./alembic.ini
+
+USER app
 
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "uribap_api.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/live', timeout=4)"]
+
+CMD ["uvicorn", "uribap_api.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
