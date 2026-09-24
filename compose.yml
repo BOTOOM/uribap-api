@@ -25,6 +25,7 @@ services:
       DATABASE_URL: postgresql+psycopg://uribap:uribap@db:5432/uribap
       OIDC_JWKS_URL: http://host.docker.internal:8080/oauth/v2/keys
       OIDC_JWKS_HOST: localhost
+      OIDC_USERINFO_CONNECT_HOST: host.docker.internal
       SMTP_HOST: host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"

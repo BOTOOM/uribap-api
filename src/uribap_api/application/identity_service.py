@@ -21,13 +21,14 @@ def provision_user(session: Session, claims: IdentityClaims) -> AppUser:
             email = normalize_email(claims.email)
         except ValueError:
             email = None
+    email_verified = email is not None and claims.email_verified
     now = datetime.now(UTC)
     if identity is not None:
         user = identity.user
         if user.status == UserStatus.DISABLED:
             return user
         user.email = email or user.email
-        user.email_verified = claims.email_verified
+        user.email_verified = email_verified
         user.display_name = claims.display_name or user.display_name
         user.last_seen_at = now
         identity.last_claims_at = now
@@ -37,7 +38,7 @@ def provision_user(session: Session, claims: IdentityClaims) -> AppUser:
 
     user = AppUser(
         email=email,
-        email_verified=claims.email_verified,
+        email_verified=email_verified,
         display_name=claims.display_name,
         last_seen_at=now,
     )

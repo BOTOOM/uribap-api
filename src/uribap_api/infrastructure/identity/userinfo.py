@@ -7,19 +7,24 @@ from uribap_api.domain.shared.errors import DomainError
 
 
 class UserInfoClient:
-    def __init__(self, url: str, *, timeout_seconds: float = 5.0) -> None:
+    def __init__(
+        self, url: str, *, timeout_seconds: float = 5.0, connect_host: str = ""
+    ) -> None:
         self.url = url
         self.timeout_seconds = timeout_seconds
+        self.connect_host = connect_host
 
     async def get_profile(self, token: str, *, subject: str) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(
                 timeout=self.timeout_seconds, follow_redirects=False
             ) as client:
-                response = await client.get(
-                    self.url,
-                    headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-                )
+                request_url = httpx.URL(self.url)
+                headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+                if self.connect_host:
+                    headers["Host"] = request_url.netloc.decode("ascii")
+                    request_url = request_url.copy_with(host=self.connect_host)
+                response = await client.get(request_url, headers=headers)
                 if response.status_code in {401, 403}:
                     raise DomainError(
                         "unauthorized",

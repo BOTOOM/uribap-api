@@ -18,7 +18,11 @@ def signing_keys() -> tuple[Any, Any, Any]:
     return private_key, private_key.public_key(), wrong_private_key
 
 
-def settings(*, userinfo_url: str = "https://issuer.example.test/oidc/v1/userinfo") -> Settings:
+def settings(
+    *,
+    userinfo_url: str = "https://issuer.example.test/oidc/v1/userinfo",
+    required_scopes: str = "openid profile",
+) -> Settings:
     values: dict[str, Any] = {
         "_env_file": None,
         "environment": "test",
@@ -26,26 +30,31 @@ def settings(*, userinfo_url: str = "https://issuer.example.test/oidc/v1/userinf
         "oidc_audience": "uribap-api",
         "oidc_jwks_url": "https://issuer.example.test/oauth/v2/keys",
         "oidc_userinfo_url": userinfo_url,
-        "oidc_required_scopes": "openid profile",
+        "oidc_required_scopes": required_scopes,
         "oidc_clock_skew_seconds": 0,
     }
     return Settings(**values)
 
 
-def signed_token(private_key: Any, **overrides: Any) -> str:
+def signed_token(
+    private_key: Any, *, include_scope: bool = True, **overrides: Any
+) -> str:
     payload: dict[str, Any] = {
         "iss": "https://issuer.example.test",
         "sub": "user-123",
         "aud": "uribap-api",
         "exp": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
-        "scope": "openid profile",
     }
+    if include_scope:
+        payload["scope"] = "openid profile"
     payload.update(overrides)
     return jwt.encode(payload, private_key, algorithm="RS256")
 
 
-def configured_validator(public_key: Any) -> TokenValidator:
-    validator = TokenValidator(settings())
+def configured_validator(
+    public_key: Any, *, required_scopes: str = "openid profile"
+) -> TokenValidator:
+    validator = TokenValidator(settings(required_scopes=required_scopes))
     validator.cache.get_key = AsyncMock(return_value=public_key)
     return validator
 
@@ -111,6 +120,47 @@ async def test_rejected_jwt_never_calls_userinfo(
         await validator.validate(signed_token(signing_key, **token_kwargs))
 
     assert error.value.status_code == status_code
+    userinfo_request.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_zitadel_jwt_without_scope_uses_empty_optional_scope_policy(
+    signing_keys: tuple[Any, Any, Any],
+) -> None:
+    private_key, public_key, _ = signing_keys
+    validator = configured_validator(public_key, required_scopes="")
+    assert validator.userinfo is not None
+    validator.userinfo.get_profile = AsyncMock(
+        return_value={
+            "email": "person@example.test",
+            "email_verified": True,
+            "name": "Person",
+            "preferred_username": None,
+        }
+    )
+    token = signed_token(private_key, include_scope=False)
+
+    claims = await validator.validate(token)
+
+    assert "scope" not in claims.raw
+    assert claims.email_verified is True
+    validator.userinfo.get_profile.assert_awaited_once_with(token, subject="user-123")
+
+
+@pytest.mark.asyncio
+async def test_zitadel_jwt_without_scope_still_enforces_configured_scope_before_userinfo(
+    signing_keys: tuple[Any, Any, Any],
+) -> None:
+    private_key, public_key, _ = signing_keys
+    validator = configured_validator(public_key, required_scopes="openid")
+    assert validator.userinfo is not None
+    userinfo_request = AsyncMock()
+    validator.userinfo.get_profile = userinfo_request
+
+    with pytest.raises(DomainError) as error:
+        await validator.validate(signed_token(private_key, include_scope=False))
+
+    assert error.value.status_code == 403
     userinfo_request.assert_not_awaited()
 
 

@@ -6,14 +6,14 @@ phase — this runbook is the contract a future deploy must satisfy.
 
 ## Reference deployment layout
 
-Target production layout on a personal domain (e.g. `example.com`):
+Target production layout for the existing Uribap domains:
 
 | Piece | Where | Public URL | Notes |
 | --- | --- | --- | --- |
-| Web (Next.js) | Vercel | `https://app.example.com` | env vars per `web/docs/operations/vercel.md` |
-| API (this repo) | Coolify → Git repo → Dockerfile | `https://api.example.com` | serves REST + `/api/v1/mcp` |
+| Web (Next.js) | Vercel | `https://uribap.edwardiaz.dev` | env vars per `web/docs/operations/vercel.md` |
+| API (this repo) | Coolify → Git repo → Dockerfile | `https://uribap-api.edwardiaz.dev` | serves REST + `/api/v1/mcp` |
 | PostgreSQL | Coolify → Databases → PostgreSQL | internal only | **shared**: one instance, one database per project |
-| ZITADEL | Coolify → Docker Compose resource (`identity/compose.coolify.yml`) | `https://auth.example.com` | **shared**: one instance, one project+client per app |
+| ZITADEL | Coolify → Docker Compose resource (`identity/compose.coolify.yml`) | `https://zitadel.edwardiaz.dev` | **shared**: one instance, one project+client per app |
 
 ### 1. Shared PostgreSQL (once)
 
@@ -39,8 +39,8 @@ Target production layout on a personal domain (e.g. `example.com`):
    `POSTGRES_ADMIN_PASSWORD`, `ZITADEL_DB_PASSWORD`, `ZITADEL_ADMIN_*`,
    `ZITADEL_SMTP_*` (Brevo or another relay).
 3. Domains per service in the Coolify UI:
-   `zitadel-api` → `https://auth.example.com`,
-   `zitadel-login` → `https://auth.example.com/ui/v2/login`.
+   `zitadel-api` → `https://zitadel.edwardiaz.dev`,
+   `zitadel-login` → `https://zitadel.edwardiaz.dev/ui/v2/login`.
    (Traefik routes the longer path to the login console; the API keeps
    `h2c` via the label already in the compose file.)
 4. Enable **Connect to Predefined Network** → the `shared` network so
@@ -50,11 +50,13 @@ Target production layout on a personal domain (e.g. `example.com`):
 6. For any **future project**: no redeploy — inside ZITADEL create a new
    Org/Project + OIDC app (or rerun the seed script with different names).
 
+Caution: preserve the existing shared ZITADEL deployment and running routes. Proxy/routing corrections are tracked separately in PR147; this API UserInfo transport change does not redeploy or alter global identity. `OIDC_USERINFO_CONNECT_HOST` is a local API Compose override only and must remain empty in production.
+
 ### 3. API on Coolify
 
 1. **New Resource → Git Repository** → pick this repo → build pack
    **Dockerfile** (root `Dockerfile`; Coolify builds it directly).
-2. Domain: `https://api.example.com` → port `8000` → HTTPS is issued
+2. Domain: `https://uribap-api.edwardiaz.dev` → port `8000` → HTTPS is issued
    automatically by Coolify's Traefik.
 3. Enable **Connect to Predefined Network** → `shared` (for Postgres), or
    use the Postgres **Public URL** (only if strictly necessary).
@@ -63,7 +65,7 @@ Target production layout on a personal domain (e.g. `example.com`):
    `alembic check`. The image does not auto-migrate.
 6. Health check path: `/api/v1/health/live` (already in the image's
    HEALTHCHECK too).
-7. MCP endpoint for agents: `https://api.example.com/api/v1/mcp` — the UI's
+7. MCP endpoint for agents: `https://uribap-api.edwardiaz.dev/api/v1/mcp` — the UI's
    "Agentes MCP" page shows this URL automatically once the web app is
    configured.
 
@@ -85,7 +87,7 @@ OIDC_ISSUER=https://zitadel.edwardiaz.dev
 OIDC_USERINFO_URL=https://zitadel.edwardiaz.dev/oidc/v1/userinfo
 ```
 
-The API retrieves the default ZITADEL profile fields only after validating the signed JWT and required scopes, and requires UserInfo `sub` to match the token. The optional UserInfo URL must remain on the issuer's HTTPS origin.
+The API retrieves default ZITADEL profile fields only after validating the signed JWT and any configured required scopes, and requires UserInfo `sub` to match the token. The optional UserInfo URL must remain on the issuer's HTTPS origin. Keep `OIDC_USERINFO_CONNECT_HOST` empty in production; the Docker host remap is only for local loopback HTTP development.
 
 ### 5. Web on Vercel
 
@@ -93,15 +95,15 @@ Project from the `web/` repo. Env vars:
 
 | Var | Value |
 | --- | --- |
-| `NEXT_PUBLIC_API_BASE_URL` | `https://api.example.com/api/v1` |
-| `URIBAP_API_INTERNAL_URL` | `https://api.example.com/api/v1` (no internal network on Vercel) |
+| `NEXT_PUBLIC_API_BASE_URL` | `https://uribap-api.edwardiaz.dev/api/v1` |
+| `URIBAP_API_INTERNAL_URL` | `https://uribap-api.edwardiaz.dev/api/v1` (no internal network on Vercel) |
 | `AUTH_SECRET` | ≥32 random chars |
 | `AUTH_ZITADEL_ID` / `AUTH_ZITADEL_SECRET` | from the manually created OIDC application |
 | `AUTH_ZITADEL_ISSUER` | `https://zitadel.edwardiaz.dev` |
 | `AUTH_TRUST_HOST` | `true` |
 
-Back on the API set `CORS_ORIGINS=https://app.example.com` and
-`WEB_BASE_URL=https://app.example.com` (email links).
+Back on the API set `CORS_ORIGINS=https://uribap.edwardiaz.dev` and
+`WEB_BASE_URL=https://uribap.edwardiaz.dev` (email links).
 
 Identity verification and recovery email text is managed at the ZITADEL organization level under Organization Settings → Message Texts; visual appearance is a separate Branding setting. These organization settings are distinct from the per-project OIDC application configuration on the shared ZITADEL instance; do not change instance-wide branding or Login V2 routing for this project. Uribap's `infrastructure/email/mailer.py` constructs `text/plain` messages from `template_data["body"]`; Brevo is only the SMTP transport. `EMAIL_DELIVERY_ENABLED` remains `false`, so this setup does not enable delivery or send email.
 
@@ -126,7 +128,8 @@ Every setting maps to an environment variable consumed by `Settings`
 | `OIDC_ISSUER` / `OIDC_AUDIENCE` | token validation | ZITADEL issuer URL + API audience |
 | `OIDC_JWKS_URL` / `OIDC_JWKS_HOST` / `OIDC_ALGORITHMS` | JWKS resolution | `RS256`; host override for internal DNS |
 | `OIDC_USERINFO_URL` | optional profile enrichment | same origin as `OIDC_ISSUER`; HTTPS in production |
-| `OIDC_REQUIRED_SCOPES` / `OIDC_JWKS_TTL_SECONDS` / `OIDC_TIMEOUT_SECONDS` / `OIDC_CLOCK_SKEW_SECONDS` | token policy | defaults sane |
+| `OIDC_USERINFO_CONNECT_HOST` | local-only Docker-to-host UserInfo transport remap | empty in production; only `host.docker.internal` for loopback HTTP issuers |
+| `OIDC_REQUIRED_SCOPES` / `OIDC_JWKS_TTL_SECONDS` / `OIDC_TIMEOUT_SECONDS` / `OIDC_CLOCK_SKEW_SECONDS` | token policy | Keep scopes empty for stock ZITADEL 4.16 JWTs, which have no signed `scope` claim; configured scopes remain strict and UserInfo cannot supply them |
 | `CORS_ORIGINS` | allowed web origins | comma-separated; the Vercel app origin only |
 | `WEB_BASE_URL` | links in outbox emails | public web URL |
 | `SMTP_HOST`/`SMTP_PORT`/`SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM`/`SMTP_USE_TLS`/`SMTP_TIMEOUT_SECONDS` | mail transport | unused while delivery is disabled |

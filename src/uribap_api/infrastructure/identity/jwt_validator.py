@@ -26,6 +26,7 @@ class TokenValidator:
             UserInfoClient(
                 settings.oidc_userinfo_url,
                 timeout_seconds=settings.oidc_timeout_seconds,
+                connect_host=settings.oidc_userinfo_connect_host,
             )
             if settings.oidc_userinfo_url
             else None

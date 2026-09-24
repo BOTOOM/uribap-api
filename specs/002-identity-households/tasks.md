@@ -191,3 +191,5 @@ MVP is Phase 1 + Phase 2 + User Story 1 (T001–T027): a protected API that vali
 - [x] T065 Correct the JWT seed/profile configuration and credential-file permissions in `identity/scripts/seed-local-oidc.py`; update `.env.example`, `identity/README.md`, and `docs/operations/coolify.md` without production secrets or real email delivery.
 - [ ] T066 Run focused regression/static checks followed by the final repository and local-identity checks; record actual results and remaining gaps in existing quickstart/convergence artifacts.
 - [ ] T067 Review the complete diff for credential leakage, cross-provider requests, verification escalation, tenant isolation, and contract compatibility; publish the bounded authentication PR without claiming older incomplete tasks are complete.
+- [x] T068 Align McpToken metadata with the existing named unique constraint and unique index; no database DDL change or new migration. Verify the metadata regression and alembic check on the dedicated test database.
+- [x] T069 Add `uv run alembic check` immediately after `uv run alembic upgrade head` in API CI so model/schema drift is detected without changing other workflow gates.

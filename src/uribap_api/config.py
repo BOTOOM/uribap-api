@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     oidc_audience: str = ""
     oidc_jwks_url: str = ""
     oidc_userinfo_url: str = ""
+    oidc_userinfo_connect_host: Literal["", "host.docker.internal"] = ""
     oidc_jwks_host: str = ""
     oidc_algorithms: str = "RS256"
     oidc_required_scopes: str = ""
@@ -82,6 +83,15 @@ class Settings(BaseSettings):
             )
             if userinfo_origin != issuer_origin:
                 raise ValueError("OIDC_USERINFO_URL must share the OIDC_ISSUER origin")
+            if self.oidc_userinfo_connect_host and (
+                self.environment == "production"
+                or issuer.scheme != "http"
+                or issuer.hostname not in {"localhost", "127.0.0.1", "::1"}
+            ):
+                raise ValueError(
+                    "OIDC_USERINFO_CONNECT_HOST is only supported for local HTTP "
+                    "issuers outside production"
+                )
             if self.environment == "production" and userinfo.scheme != "https":
                 raise ValueError("OIDC_USERINFO_URL must use HTTPS in production")
         return self

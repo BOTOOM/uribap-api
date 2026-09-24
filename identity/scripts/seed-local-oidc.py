@@ -123,7 +123,7 @@ def main() -> int:
                     f"OIDC_JWKS_URL={ISSUER}/oauth/v2/keys",
                     f"OIDC_USERINFO_URL={ISSUER}/oidc/v1/userinfo",
                     f"OIDC_AUDIENCE={project_id}",
-                    "OIDC_REQUIRED_SCOPES=openid",
+                    "OIDC_REQUIRED_SCOPES=",
                     "",
                 ]
             ),

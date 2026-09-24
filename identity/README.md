@@ -64,6 +64,8 @@ OIDC_USERINFO_URL=http://localhost:8080/oidc/v1/userinfo
 
 Production must use HTTPS. The API retrieves profile data only after access-token validation and requires the UserInfo subject to match the token subject. Configure the ZITADEL application for JWT access tokens, Basic client authentication, authorization-code flow with PKCE, refresh-token grant, and ID-token UserInfo profile assertions. The API audience is the ZITADEL project ID; the Web application uses its OIDC client ID and secret.
 
+Stock ZITADEL 4.16 JWT access tokens do not contain a signed `scope` claim. Keep `OIDC_REQUIRED_SCOPES` empty (the API's optional default and local seed output); do not synthesize scopes from UserInfo, which supplies profile fields only. Nonempty requirements remain enforced and will reject a token without the required provider-signed scope claim unless a separately designed introspection integration is introduced.
+
 ## Use from API and Web
 
 For host processes:
@@ -72,10 +74,12 @@ For host processes:
 OIDC_ISSUER=http://localhost:8080
 OIDC_JWKS_URL=http://localhost:8080/oauth/v2/keys
 OIDC_USERINFO_URL=http://localhost:8080/oidc/v1/userinfo
+OIDC_USERINFO_CONNECT_HOST=
+OIDC_REQUIRED_SCOPES=
 AUTH_ZITADEL_ISSUER=http://localhost:8080
 ```
 
-For containers that reach services through the host, use the container-specific `host.docker.internal` URL and keep `extra_hosts` enabled. Do not change a production issuer to accommodate local Docker.
+For local API containers, keep `OIDC_USERINFO_URL` on the public local issuer origin (`http://localhost:8080/oidc/v1/userinfo`) and set `OIDC_USERINFO_CONNECT_HOST=host.docker.internal`. The API connects to the Docker host through that alias while preserving `Host: localhost:8080`; Compose supplies `extra_hosts: host.docker.internal:host-gateway`. Host-process development leaves the connect host empty. Production MUST leave it empty and use a same-origin HTTPS URL. Do not change a production issuer to accommodate local Docker.
 
 The Web callback must be registered in the synthetic local ZITADEL application:
 

@@ -85,6 +85,7 @@ def test_seed_creates_jwt_profile_client_with_private_output_and_reuses_it(
     contents = output_file.read_text(encoding="utf-8")
     assert "OIDC_USERINFO_URL=https://issuer.example.test/oidc/v1/userinfo" in contents
     assert "OIDC_AUDIENCE=synthetic-project-id" in contents
+    assert "OIDC_REQUIRED_SCOPES=\n" in contents
     assert "synthetic-client-secret" not in stdout.getvalue()
     assert "synthetic-admin-token" not in stdout.getvalue()
     assert output_file.stat().st_mode & 0o777 == 0o600

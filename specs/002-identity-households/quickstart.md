@@ -109,18 +109,28 @@ This preserves volumes. Removing volumes is a separate, explicitly approved rese
 
 ## Deployment Readiness Amendment — observed validation on 2026-09-24
 
-All amendment tests use synthetic values. The API change did not touch migrations, persistence models, or the OpenAPI snapshot.
+All amendment tests use synthetic values. The follow-up aligns ORM metadata with existing DDL; it adds no migration, database DDL, or OpenAPI change.
 
 | Gate | Result | Evidence |
 |---|---|---|
 | `ENVIRONMENT=test OIDC_USERINFO_URL= uv run pytest tests/unit/test_config.py tests/unit/infrastructure/test_userinfo.py` | PASS | 41 passed, including port `:0`, effective/default ports, normalized email, malformed email, and redacted failures |
 | Focused API Ruff | PASS | `ruff check` on config, identity, and affected tests |
 | `uv run alembic upgrade head` | PASS | Fresh dedicated container `uribap-auth-tests-db`, loopback `127.0.0.1:55433`, database `uribap_auth_test` |
-| `uv run alembic check` | FAIL | Existing drift: `mcp_token.token_hash` has both a named `UniqueConstraint` and unique index in migration `f2b8d4e6a917`, while the mapped column expresses the unique index; this amendment changed neither file |
+| `uv run alembic check` after T068 | PASS | `McpToken` now declares the existing named `uq_mcp_token_hash` constraint plus the existing unique `ix_mcp_token_token_hash` index; no DDL or migration was added |
+| `ENVIRONMENT=test OIDC_USERINFO_URL= uv run pytest tests/unit/test_mcp_metadata.py` | PASS | 1 metadata regression passed against the model |
+| Focused MCP metadata Ruff | PASS | `ruff check src/uribap_api/infrastructure/persistence/mcp_models.py tests/unit/test_mcp_metadata.py` |
 | `uv run ruff check .` | PASS | Full repository Ruff gate |
 | `uv run pyright` | PASS | 0 errors, 0 warnings (tool noted a newer Pyright release is available) |
-| `uv run pytest tests/unit tests/api tests/integration` | PASS | 264 passed, 2 skipped, 1 upstream Starlette/AnyIO deprecation warning |
+| `uv run pytest tests/unit tests/api tests/integration` | PASS (before T068 metadata-only change) | 264 passed, 2 skipped, 1 upstream Starlette/AnyIO deprecation warning; not rerun after T068 per bounded follow-up instructions |
 | `PYTHONPATH=src uv run python -m uribap_api.tools.export_openapi --check` | PASS | No public contract changes |
 | `uv run pip-audit` | PASS | No known vulnerabilities |
 
-Local readiness probes returned ZITADEL `http://localhost:8080/debug/ready` 200, Mailpit `http://localhost:8025/api/v1/info` 200, and the already-running API `http://localhost:8010/api/v1/health/live` 200. The local ZITADEL integration and Compose smoke tests were the two explicit skips; no SMTP message was sent. The dedicated test DB and the canonical local identity stack remain running. Do not treat the Alembic check or live identity flow as green.
+Local readiness probes returned ZITADEL `http://localhost:8080/debug/ready` 200, Mailpit `http://localhost:8025/api/v1/info` 200, and the already-running API `http://localhost:8010/api/v1/health/live` 200. The local ZITADEL integration and Compose smoke tests were the two explicit skips; no SMTP message was sent. The dedicated test DB and the canonical local identity stack remain running. The previous Alembic metadata drift is resolved by T068; live identity acceptance remains pending.
+
+## Stock ZITADEL 4.16 JWT scope compatibility
+
+Stock ZITADEL 4.16 access-token JWTs do not contain a signed `scope` claim. The local seed therefore emits an empty `OIDC_REQUIRED_SCOPES` value, matching the API's existing optional default. The focused seed/JWT suite passed 11 tests: a no-scope token succeeds with empty policy and matching UserInfo, while `required_scopes=openid` still returns 403 before UserInfo. UserInfo remains profile-only; it never synthesizes authorization scopes.
+
+## Local UserInfo transport and profile follow-up
+
+The focused API gate passed 66 tests, Ruff, and Pyright. The temporary API image/container uses the dedicated test database on 55433 and the existing `uribap-identity` host-gateway network. A direct `UserInfoClient` request with a synthetic invalid bearer returned generic `unauthorized`/401 rather than transport-unavailable/503, proving the mapped request reached local ZITADEL with the local Host routing. This is transport evidence only: no valid-user `/me` profile/verification pass occurred because the local custom Login selection did not take effect. No SMTP message was sent. The API CI workflow now runs `uv run alembic check` immediately after `alembic upgrade head`.

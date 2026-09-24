@@ -69,6 +69,30 @@ async def test_get_profile_returns_only_allowed_fields_for_matching_subject(
 
 
 @pytest.mark.asyncio
+async def test_connect_host_preserves_original_public_host_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests, _ = install_transport(
+        monkeypatch,
+        lambda request: profile_response({"sub": "user-123", "email": "person@example.test"}),
+    )
+    client = UserInfoClient(
+        "http://localhost:8080/oidc/v1/userinfo",
+        connect_host="host.docker.internal",
+    )
+
+    profile = await client.get_profile("synthetic-token", subject="user-123")
+
+    assert profile["email"] == "person@example.test"
+    assert requests[0].url.scheme == "http"
+    assert requests[0].url.host == "host.docker.internal"
+    assert requests[0].url.port == 8080
+    assert requests[0].url.path == "/oidc/v1/userinfo"
+    assert requests[0].headers["Host"] == "localhost:8080"
+    assert requests[0].headers["Authorization"] == "Bearer synthetic-token"
+
+
+@pytest.mark.asyncio
 async def test_get_profile_normalizes_email_before_returning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
