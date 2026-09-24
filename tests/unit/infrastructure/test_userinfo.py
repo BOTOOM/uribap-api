@@ -246,6 +246,29 @@ async def test_get_profile_maps_provider_rejection_to_unauthorized(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [201, 202, 204, 206])
+async def test_get_profile_rejects_non_200_success_status(
+    monkeypatch: pytest.MonkeyPatch, status_code: int
+) -> None:
+    profile = {"sub": "user-123", "email": "person@example.test"}
+
+    def response(request: httpx.Request) -> httpx.Response:
+        if status_code == 204:
+            return httpx.Response(status_code)
+        return httpx.Response(status_code, json=profile)
+
+    install_transport(monkeypatch, response)
+
+    with pytest.raises(DomainError) as error:
+        await UserInfoClient("https://issuer.example.test/userinfo").get_profile(
+            "synthetic-token", subject="user-123"
+        )
+
+    assert error.value.code == "identity_provider_unavailable"
+    assert error.value.status_code == 503
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("status_code", [302, 500])
 async def test_get_profile_maps_redirects_and_server_errors_to_unavailable(
     monkeypatch: pytest.MonkeyPatch, status_code: int

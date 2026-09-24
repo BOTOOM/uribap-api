@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from uribap_api.config import Settings
 from uribap_api.domain.shared.errors import DomainError
+from uribap_api.infrastructure.identity import claims as identity_claims
 from uribap_api.infrastructure.identity.jwt_validator import TokenValidator
 
 
@@ -83,6 +84,75 @@ async def test_valid_jwt_is_enriched_with_matching_userinfo_profile(
     assert claims.email_verified is True
     assert claims.display_name == "Person"
     validator.userinfo.get_profile.assert_awaited_once_with(token, subject="user-123")
+
+
+@pytest.mark.asyncio
+async def test_userinfo_missing_name_preserves_signed_profile_and_clears_stale_email(
+    signing_keys: tuple[Any, Any, Any],
+) -> None:
+    private_key, public_key, _ = signing_keys
+    validator = configured_validator(public_key)
+    assert validator.userinfo is not None
+    validator.userinfo.get_profile = AsyncMock(
+        return_value={
+            "email": None,
+            "email_verified": False,
+            "name": None,
+            "preferred_username": None,
+        }
+    )
+    token = signed_token(
+        private_key,
+        email="old@example.test",
+        email_verified=True,
+        name="Signed Person",
+        preferred_username="signed-person",
+    )
+
+    claims = await validator.validate(token)
+
+    assert claims.email is None
+    assert claims.email_verified is False
+    assert claims.display_name == "Signed Person"
+    assert claims.raw["email"] is None
+    assert claims.raw["email_verified"] is False
+    assert claims.raw["name"] == "Signed Person"
+    assert claims.raw["preferred_username"] == "signed-person"
+
+
+@pytest.mark.asyncio
+async def test_userinfo_delay_does_not_revalidate_expiration_after_jwt_validation(
+    signing_keys: tuple[Any, Any, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    private_key, public_key, _ = signing_keys
+    validator = configured_validator(public_key)
+    assert validator.userinfo is not None
+    token = signed_token(private_key)
+
+    async def expire_claim_clock_after_validation(
+        _: str, *, subject: str
+    ) -> dict[str, Any]:
+        assert subject == "user-123"
+        expiry = datetime.now(UTC) + timedelta(days=1)
+
+        class ExpiredClock:
+            @classmethod
+            def now(cls, _: Any = None) -> datetime:
+                return expiry
+
+        monkeypatch.setattr(identity_claims, "datetime", ExpiredClock)
+        return {
+            "email": "person@example.test",
+            "email_verified": True,
+            "name": "Person",
+            "preferred_username": None,
+        }
+
+    validator.userinfo.get_profile = AsyncMock(side_effect=expire_claim_clock_after_validation)
+    claims = await validator.validate(token)
+
+    assert claims.subject == "user-123"
+    assert claims.email_verified is True
 
 
 @pytest.mark.asyncio

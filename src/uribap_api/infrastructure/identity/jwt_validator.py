@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import Any
 
 import jwt
@@ -63,8 +64,23 @@ class TokenValidator:
         require_scopes(claims, self.settings.oidc_required_scopes_set)
         if self.userinfo is not None:
             profile = await self.userinfo.get_profile(token, subject=claims.subject)
-            claims = parse_identity_claims(
-                {**payload, **profile}, expected_issuer=self.settings.oidc_issuer
+            enriched_payload = {
+                **payload,
+                "email": profile["email"],
+                "email_verified": profile["email_verified"],
+            }
+            for field in ("name", "preferred_username"):
+                if profile[field] is not None:
+                    enriched_payload[field] = profile[field]
+            claims = replace(
+                claims,
+                email=profile["email"],
+                email_verified=profile["email_verified"],
+                display_name=(
+                    enriched_payload.get("name")
+                    or enriched_payload.get("preferred_username")
+                ),
+                raw=enriched_payload,
             )
         return claims
 

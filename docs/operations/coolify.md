@@ -148,6 +148,9 @@ full list with safe local placeholders.
   requires `Authorization: Bearer uribap_mcp_*` and shares this image.
 - Readiness: `GET /api/v1/health/ready` — requires a reachable database with
   `alembic_version` present; use for traffic switching.
+- Identity: `GET /api/v1/health/identity` — checks JWKS availability for JWT
+  signature validation only. It does not probe optional UserInfo; authenticated
+  requests still fail closed with `503` if profile enrichment is unavailable.
 - Health output never contains connection strings, credentials, or stack
   traces.
 

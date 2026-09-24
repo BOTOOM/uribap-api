@@ -32,7 +32,13 @@ class UserInfoClient:
                         "The identity provider rejected the access token.",
                         401,
                     )
-                response.raise_for_status()
+                if response.status_code != 200:
+                    raise DomainError(
+                        "identity_provider_unavailable",
+                        "Identity provider unavailable",
+                        "The identity provider profile could not be retrieved.",
+                        503,
+                    )
                 profile = response.json()
         except (httpx.HTTPError, ValueError):
             raise DomainError(
