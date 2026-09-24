@@ -67,26 +67,25 @@ Target production layout on a personal domain (e.g. `example.com`):
    "Agentes MCP" page shows this URL automatically once the web app is
    configured.
 
-### 4. Seed the Uribap OIDC client
+### 4. Create the production Uribap OIDC project and application
 
-Run the repo seed against the shared ZITADEL with a machine PAT (ZITADEL
-console → organization → the `login-client` PAT at
-`/zitadel/bootstrap/login-client.pat` inside `zitadel-api`, or create an
-admin PAT in the console):
+Create the Uribap project and its Web OIDC application manually in the ZITADEL Console through the authorized administrative workflow. The local seed helper is for disposable local instances only; do not use the login-client PAT for production administration. Keep production credentials in the authorized secret manager and out of runbooks and generated files.
 
-```bash
-cd api/identity/scripts
-OIDC_ISSUER=https://auth.example.com \
-ZITADEL_ADMIN_TOKEN=<pat> \
-WEB_BASE_URL=https://app.example.com \
-ZITADEL_LOCAL_PROJECT_NAME="Uribap" \
-ZITADEL_LOCAL_WEB_CLIENT_NAME="Uribap Web" \
-SEED_OUTPUT_FILE=/tmp/oidc-prod.env \
-uv run python seed-local-oidc.py   # or plain python with httpx installed
+Configure the OIDC Web application with JWT access tokens, Basic client authentication, authorization-code flow with PKCE, the refresh-token grant, and ID-token UserInfo profile assertions. If the project or client already exists, the local seed does not update its settings; change the existing application manually. Register these production redirects:
+
+```text
+Callback: https://uribap.edwardiaz.dev/api/auth/callback/zitadel
+Post-logout: https://uribap.edwardiaz.dev/
 ```
 
-It creates the project + OIDC web app (redirects to `WEB_BASE_URL`,
-`devMode` off outside localhost) and writes the env block for both repos.
+Use the project ID as `OIDC_AUDIENCE` for API token validation. Use the OIDC application's client ID and secret for the Web application's `AUTH_ZITADEL_ID` and `AUTH_ZITADEL_SECRET`; the client ID is not the API audience. For this deployment, configure the API issuer and same-origin profile endpoint as:
+
+```text
+OIDC_ISSUER=https://zitadel.edwardiaz.dev
+OIDC_USERINFO_URL=https://zitadel.edwardiaz.dev/oidc/v1/userinfo
+```
+
+The API retrieves the default ZITADEL profile fields only after validating the signed JWT and required scopes, and requires UserInfo `sub` to match the token. The optional UserInfo URL must remain on the issuer's HTTPS origin.
 
 ### 5. Web on Vercel
 
@@ -97,12 +96,14 @@ Project from the `web/` repo. Env vars:
 | `NEXT_PUBLIC_API_BASE_URL` | `https://api.example.com/api/v1` |
 | `URIBAP_API_INTERNAL_URL` | `https://api.example.com/api/v1` (no internal network on Vercel) |
 | `AUTH_SECRET` | ≥32 random chars |
-| `AUTH_ZITADEL_ID` / `AUTH_ZITADEL_SECRET` | from the seed output |
-| `AUTH_ZITADEL_ISSUER` | `https://auth.example.com` |
+| `AUTH_ZITADEL_ID` / `AUTH_ZITADEL_SECRET` | from the manually created OIDC application |
+| `AUTH_ZITADEL_ISSUER` | `https://zitadel.edwardiaz.dev` |
 | `AUTH_TRUST_HOST` | `true` |
 
 Back on the API set `CORS_ORIGINS=https://app.example.com` and
 `WEB_BASE_URL=https://app.example.com` (email links).
+
+Identity verification and recovery email text is managed at the ZITADEL organization level under Organization Settings → Message Texts; visual appearance is a separate Branding setting. These organization settings are distinct from the per-project OIDC application configuration on the shared ZITADEL instance; do not change instance-wide branding or Login V2 routing for this project. Uribap's `infrastructure/email/mailer.py` constructs `text/plain` messages from `template_data["body"]`; Brevo is only the SMTP transport. `EMAIL_DELIVERY_ENABLED` remains `false`, so this setup does not enable delivery or send email.
 
 ## Build
 
@@ -124,6 +125,7 @@ Every setting maps to an environment variable consumed by `Settings`
 | `DATABASE_POOL_SIZE` / `DATABASE_MAX_OVERFLOW` / `DATABASE_POOL_TIMEOUT_SECONDS` | pool tuning | defaults 5/5/5s |
 | `OIDC_ISSUER` / `OIDC_AUDIENCE` | token validation | ZITADEL issuer URL + API audience |
 | `OIDC_JWKS_URL` / `OIDC_JWKS_HOST` / `OIDC_ALGORITHMS` | JWKS resolution | `RS256`; host override for internal DNS |
+| `OIDC_USERINFO_URL` | optional profile enrichment | same origin as `OIDC_ISSUER`; HTTPS in production |
 | `OIDC_REQUIRED_SCOPES` / `OIDC_JWKS_TTL_SECONDS` / `OIDC_TIMEOUT_SECONDS` / `OIDC_CLOCK_SKEW_SECONDS` | token policy | defaults sane |
 | `CORS_ORIGINS` | allowed web origins | comma-separated; the Vercel app origin only |
 | `WEB_BASE_URL` | links in outbox emails | public web URL |

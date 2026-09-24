@@ -10,6 +10,7 @@ from uribap_api.infrastructure.identity.claims import (
     require_scopes,
 )
 from uribap_api.infrastructure.identity.jwks_cache import JWKSCache
+from uribap_api.infrastructure.identity.userinfo import UserInfoClient
 
 
 class TokenValidator:
@@ -20,6 +21,14 @@ class TokenValidator:
             host_header=settings.oidc_jwks_host,
             ttl_seconds=settings.oidc_jwks_ttl_seconds,
             timeout_seconds=settings.oidc_timeout_seconds,
+        )
+        self.userinfo = (
+            UserInfoClient(
+                settings.oidc_userinfo_url,
+                timeout_seconds=settings.oidc_timeout_seconds,
+            )
+            if settings.oidc_userinfo_url
+            else None
         )
 
     async def validate(self, token: str) -> IdentityClaims:
@@ -51,6 +60,11 @@ class TokenValidator:
             ) from exc
         claims = parse_identity_claims(payload, expected_issuer=self.settings.oidc_issuer)
         require_scopes(claims, self.settings.oidc_required_scopes_set)
+        if self.userinfo is not None:
+            profile = await self.userinfo.get_profile(token, subject=claims.subject)
+            claims = parse_identity_claims(
+                {**payload, **profile}, expected_issuer=self.settings.oidc_issuer
+            )
         return claims
 
     async def ready(self) -> bool:

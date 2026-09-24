@@ -19,3 +19,9 @@
 5. Secret-redaction/audit assertions and a dedicated API identity integration test file need completion.
 
 The feature remains `Ready for implementation`/in progress and must not be considered converged until the appended tasks pass.
+
+## Deployment Readiness Amendment — evidence on 2026-09-24
+
+T063–T065 have focused regression and static evidence: URL validation handles explicit/default ports including rejection of UserInfo port `0`; UserInfo email normalization rejects invalid provider addresses with redacted 503s; JWT/subject binding, seed JWT/profile settings, and `0600` seed output are covered by synthetic tests. The focused config/UserInfo suite passed 41 tests, and full Ruff, Pyright, unit/API/integration, OpenAPI, and dependency-audit gates passed as recorded in `quickstart.md`.
+
+T066 remains open. `alembic check` detected the existing `mcp_token.token_hash` named-constraint/index mismatch, and the live local OIDC integration remained skipped; no migration/schema change was made in this amendment. Historical tasks remain unchanged. T067 review/PR remains with the lead.

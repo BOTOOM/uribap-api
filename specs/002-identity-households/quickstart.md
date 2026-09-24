@@ -106,3 +106,21 @@ docker compose -p uribap-identity -f compose.identity.yml down
 ```
 
 This preserves volumes. Removing volumes is a separate, explicitly approved reset operation and is never automated by the test skill.
+
+## Deployment Readiness Amendment — observed validation on 2026-09-24
+
+All amendment tests use synthetic values. The API change did not touch migrations, persistence models, or the OpenAPI snapshot.
+
+| Gate | Result | Evidence |
+|---|---|---|
+| `ENVIRONMENT=test OIDC_USERINFO_URL= uv run pytest tests/unit/test_config.py tests/unit/infrastructure/test_userinfo.py` | PASS | 41 passed, including port `:0`, effective/default ports, normalized email, malformed email, and redacted failures |
+| Focused API Ruff | PASS | `ruff check` on config, identity, and affected tests |
+| `uv run alembic upgrade head` | PASS | Fresh dedicated container `uribap-auth-tests-db`, loopback `127.0.0.1:55433`, database `uribap_auth_test` |
+| `uv run alembic check` | FAIL | Existing drift: `mcp_token.token_hash` has both a named `UniqueConstraint` and unique index in migration `f2b8d4e6a917`, while the mapped column expresses the unique index; this amendment changed neither file |
+| `uv run ruff check .` | PASS | Full repository Ruff gate |
+| `uv run pyright` | PASS | 0 errors, 0 warnings (tool noted a newer Pyright release is available) |
+| `uv run pytest tests/unit tests/api tests/integration` | PASS | 264 passed, 2 skipped, 1 upstream Starlette/AnyIO deprecation warning |
+| `PYTHONPATH=src uv run python -m uribap_api.tools.export_openapi --check` | PASS | No public contract changes |
+| `uv run pip-audit` | PASS | No known vulnerabilities |
+
+Local readiness probes returned ZITADEL `http://localhost:8080/debug/ready` 200, Mailpit `http://localhost:8025/api/v1/info` 200, and the already-running API `http://localhost:8010/api/v1/health/live` 200. The local ZITADEL integration and Compose smoke tests were the two explicit skips; no SMTP message was sent. The dedicated test DB and the canonical local identity stack remain running. Do not treat the Alembic check or live identity flow as green.

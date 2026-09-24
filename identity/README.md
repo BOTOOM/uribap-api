@@ -52,7 +52,17 @@ After the stack is ready, run the redacted seed helper from the API repository:
 uv run python identity/scripts/seed-local-oidc.py
 ```
 
-The helper verifies discovery/JWKS/Mailpit and prints setup guidance. It must never print a client secret, access token, refresh token, password, or masterkey. Creating an OIDC application requires the disposable Console/Admin API credentials created for this local stack; those values remain outside Git.
+The helper verifies discovery/JWKS/Mailpit and prints setup guidance. It must never print a client secret, access token, refresh token, password, or masterkey. Creating an OIDC application requires the disposable Console/Admin API credentials created for this local stack; those values remain outside Git. The helper does not update existing OIDC applications; manually configure a reused application for JWT access tokens and ID-token UserInfo profile assertions.
+
+## OIDC application settings and profile claims
+
+The API validates signed JWT access tokens for authentication and authorization. When the default ZITADEL profile fields are needed, configure the optional, same-origin UserInfo endpoint:
+
+```text
+OIDC_USERINFO_URL=http://localhost:8080/oidc/v1/userinfo
+```
+
+Production must use HTTPS. The API retrieves profile data only after access-token validation and requires the UserInfo subject to match the token subject. Configure the ZITADEL application for JWT access tokens, Basic client authentication, authorization-code flow with PKCE, refresh-token grant, and ID-token UserInfo profile assertions. The API audience is the ZITADEL project ID; the Web application uses its OIDC client ID and secret.
 
 ## Use from API and Web
 
@@ -61,6 +71,7 @@ For host processes:
 ```text
 OIDC_ISSUER=http://localhost:8080
 OIDC_JWKS_URL=http://localhost:8080/oauth/v2/keys
+OIDC_USERINFO_URL=http://localhost:8080/oidc/v1/userinfo
 AUTH_ZITADEL_ISSUER=http://localhost:8080
 ```
 
@@ -72,7 +83,7 @@ The Web callback must be registered in the synthetic local ZITADEL application:
 http://localhost:3000/api/auth/callback/zitadel
 ```
 
-The API can test basic OIDC/JWKS without SMTP. Complete verification/reset/invitation tests require Mailpit and inspect messages through its API/UI.
+Register `http://localhost:3000/` as the post-logout redirect URI. Identity verification and recovery email text is configured at the ZITADEL organization level under Organization Settings → Message Texts; visual appearance is a separate Branding setting. These organization settings are distinct from the per-project OIDC application settings on the shared instance. The API can test basic OIDC/JWKS without SMTP. Complete verification/reset/invitation tests require Mailpit and inspect messages through its API/UI.
 
 ## Stop without deleting data
 
