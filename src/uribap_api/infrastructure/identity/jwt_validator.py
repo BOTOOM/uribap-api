@@ -14,6 +14,18 @@ from uribap_api.infrastructure.identity.jwks_cache import JWKSCache
 from uribap_api.infrastructure.identity.userinfo import UserInfoClient
 
 
+def _display_name(payload: dict[str, Any], profile: dict[str, Any]) -> str | None:
+    for source in (
+        profile.get("name"),
+        profile.get("preferred_username"),
+        payload.get("name"),
+        payload.get("preferred_username"),
+    ):
+        if isinstance(source, str) and source:
+            return source
+    return None
+
+
 class TokenValidator:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -76,10 +88,7 @@ class TokenValidator:
                 claims,
                 email=profile["email"],
                 email_verified=profile["email_verified"],
-                display_name=(
-                    enriched_payload.get("name")
-                    or enriched_payload.get("preferred_username")
-                ),
+                display_name=_display_name(payload, profile),
                 raw=enriched_payload,
             )
         return claims

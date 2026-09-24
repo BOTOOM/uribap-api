@@ -121,6 +121,58 @@ async def test_userinfo_missing_name_preserves_signed_profile_and_clears_stale_e
 
 
 @pytest.mark.asyncio
+async def test_non_text_signed_names_are_ignored_when_userinfo_has_no_name(
+    signing_keys: tuple[Any, Any, Any],
+) -> None:
+    private_key, public_key, _ = signing_keys
+    validator = configured_validator(public_key)
+    assert validator.userinfo is not None
+    validator.userinfo.get_profile = AsyncMock(
+        return_value={
+            "email": "person@example.test",
+            "email_verified": True,
+            "name": None,
+            "preferred_username": None,
+        }
+    )
+
+    claims = await validator.validate(
+        signed_token(private_key, name={"given": "Person"}, preferred_username=["person"])
+    )
+
+    assert claims.display_name is None
+
+
+@pytest.mark.asyncio
+async def test_current_userinfo_username_precedes_a_stale_signed_name(
+    signing_keys: tuple[Any, Any, Any],
+) -> None:
+    private_key, public_key, _ = signing_keys
+    validator = configured_validator(public_key)
+    assert validator.userinfo is not None
+    validator.userinfo.get_profile = AsyncMock(
+        return_value={
+            "email": "person@example.test",
+            "email_verified": True,
+            "name": None,
+            "preferred_username": "current-person",
+        }
+    )
+
+    claims = await validator.validate(
+        signed_token(
+            private_key,
+            name="Previous Person",
+            preferred_username="previous-person",
+        )
+    )
+
+    assert claims.display_name == "current-person"
+    assert claims.raw["name"] == "Previous Person"
+    assert claims.raw["preferred_username"] == "current-person"
+
+
+@pytest.mark.asyncio
 async def test_userinfo_delay_does_not_revalidate_expiration_after_jwt_validation(
     signing_keys: tuple[Any, Any, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
