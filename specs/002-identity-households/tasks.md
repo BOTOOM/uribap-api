@@ -183,3 +183,11 @@ MVP is Phase 1 + Phase 2 + User Story 1 (T001–T027): a protected API that vali
 - [ ] T060 [P] Implement and run the warm-JWKS p95 benchmark, record p95/timeout/key-rotation evidence, and remove the placeholder skip from `tests/performance/test_identity_latency.py`. (SC-008; partial)
 - [ ] T061 Run the complete `/uribap-api-testing` and `/uribap-local-identity-testing` workflows, including Compose smoke, `pip-audit`, secret scan, Docker stats, Mailpit assertions, and quickstart evidence in `specs/002-identity-households/quickstart.md`. (SC-006, SC-009; partial)
 - [ ] T062 Re-run read-only Spec Kit analysis and update `specs/002-identity-households/analyze.md` and `converge.md`; only then mark this feature converged. (Constitution workflow; missing)
+
+## Deployment Readiness Amendment
+
+- [ ] T063 Write failing deterministic tests in `tests/unit/infrastructure/test_userinfo.py`, `test_jwt_validator.py`, `tests/unit/test_config.py`, and `tests/unit/test_oidc_seed.py` for FR-017–FR-020.
+- [ ] T064 Add optional trusted UserInfo configuration and async profile retrieval in `src/uribap_api/config.py`, `infrastructure/identity/userinfo.py`, and `jwt_validator.py`; validate JWT/scopes first and bind subjects before provisioning.
+- [ ] T065 Correct the JWT seed/profile configuration and credential-file permissions in `identity/scripts/seed-local-oidc.py`; update `.env.example`, `identity/README.md`, and `docs/operations/coolify.md` without production secrets or real email delivery.
+- [ ] T066 Run focused regression/static checks followed by the final repository and local-identity checks; record actual results and remaining gaps in existing quickstart/convergence artifacts.
+- [ ] T067 Review the complete diff for credential leakage, cross-provider requests, verification escalation, tenant isolation, and contract compatibility; publish the bounded authentication PR without claiming older incomplete tasks are complete.

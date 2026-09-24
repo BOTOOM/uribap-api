@@ -58,3 +58,9 @@ These are planned implementation choices, not unresolved specification ambiguiti
 ## Gate decision
 
 Product code MAY begin only after this analysis artifact is committed with the feature specs. All implementation tasks remain unchecked until their tests and quickstart evidence pass.
+
+## Deployment Readiness Amendment — Pre-Implementation Review
+
+PASS for the bounded amendment FR-017–FR-020 / T063–T067: subject binding, immutable authorization claims, exact trusted origin, no redirected credentials, strict verification state, safe failures, optional-provider compatibility, and synthetic tests have explicit requirements and a corresponding implementation seam. Existing dependencies suffice; no database or public API schema changes are proposed. JWT seed configuration now matches the JWT-only validator contract in the design. The user authorized using the current session models after catalog authentication failed.
+
+This is a design gate, not test evidence. Implementation, local integration, and final convergence remain pending. Historical outstanding tasks retain their original status. The separate customized Login V2 UI is owned by the Web amendment.

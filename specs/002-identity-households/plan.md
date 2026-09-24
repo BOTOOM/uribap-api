@@ -189,3 +189,19 @@ openapi/openapi.json
 ## Complexity Tracking
 
 No constitution violations. The local identity stack is a separate Compose profile rather than a runtime microservice. The asynchronous JWKS cache is bounded in-process infrastructure required to avoid blocking API handlers and is covered by timeout/rotation tests.
+
+## Deployment Readiness Amendment
+
+Use an optional `OIDC_USERINFO_URL` setting, default empty. A configured URL must share the configured issuer's HTTP(S) origin, contain no credentials/query/fragment, and use HTTPS in production. This intentionally supports the public issuer path rather than an implicit internal-host override. No new dependency, persistence model, migration, or OpenAPI change is needed.
+
+Add an asynchronous `UserInfoClient` using existing httpx and `OIDC_TIMEOUT_SECONDS`. Disable redirects explicitly. Fetch only after JWT validation and scope enforcement. Require a non-empty matching `sub`; project only `email`, `email_verified`, `name`, and `preferred_username` into the already validated payload. Preserve issuer, audience, expiry, subject, scope, and all authorization decisions. A missing email must never yield verified-email authority. Do not cache bearer tokens or profile responses in this amendment, so verification changes are not hidden by a new cache.
+
+Map provider 401/403 or subject mismatch to redacted 401; transport failures, other statuses including redirects, invalid JSON and invalid profile shapes to redacted 503. Do not expose upstream bodies or tokens in exceptions. Preserve the existing behavior when UserInfo is not configured.
+
+Update the local seed to create JWT rather than opaque tokens, include profile claims in ID tokens, emit OIDC_USERINFO_URL, and write credential output with mode 0600. Existing seeded clients are not silently changed; document the required manual JWT/profile settings. Remove the production runbook recommendation to use the login-client PAT for administrative provisioning. Record where identity versus application email templates are configured, without enabling real delivery.
+
+Tests first: signed-token cases with and without UserInfo, exact subject binding, strict profile shapes, false/missing verification, unauthorized/outage/timeout/redirect behavior, no profile calls for rejected JWTs/scopes, preserved security claims, URL validation, seed request configuration and file mode. Use deterministic synthetic identities and httpx MockTransport; production issuers and SMTP are forbidden in tests.
+
+Focused gate: Ruff, Pyright, and the new identity/configuration/seed regression tests. Final cross-repository gate adds existing unit/API/integration and OpenAPI checks plus local ZITADEL/Mailpit/Web flow verification where available. Record unavailable checks honestly; unrelated historical tasks are not closed by this amendment.
+
+Model-policy exception: `devin models list --format json` could not authenticate. The user explicitly selected "Usar esta sesión", authorizing the available session models and execution tools for this work. The lead owns architecture/security review; implementation and test execution use the session's available delegated worker. No historical model-availability claim is made.

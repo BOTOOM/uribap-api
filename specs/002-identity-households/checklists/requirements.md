@@ -31,3 +31,13 @@
 ## Notes
 
 - Requirements quality is complete; implementation status is tracked separately in `tasks.md`.
+
+## Deployment Readiness Amendment
+
+- [x] UserInfo subject binding and authorization-claim separation are explicit (FR-017, FR-018).
+- [x] HTTPS/origin, redirect, timeout, and redacted-failure boundaries are specified.
+- [x] Strict verified-email semantics and optional-provider compatibility are specified (FR-019).
+- [x] JWT seed, generated-file protection, and manual production provisioning are specified (FR-020).
+- [x] The custom login UI remains a separate Web concern; no passwords enter the API.
+- [x] The user-approved model-catalog exception is recorded in the plan.
+- [ ] Implementation and local acceptance evidence are complete.
