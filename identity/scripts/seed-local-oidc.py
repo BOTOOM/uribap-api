@@ -99,7 +99,8 @@ def main() -> int:
                     ],
                     "version": "OIDC_VERSION_1_0",
                     "devMode": DEV_MODE,
-                    "accessTokenType": "OIDC_TOKEN_TYPE_BEARER",
+                    "accessTokenType": "OIDC_TOKEN_TYPE_JWT",
+                    "idTokenUserinfoAssertion": True,
                     "skipNativeAppSuccessPage": True,
                 },
             )
@@ -108,6 +109,8 @@ def main() -> int:
             if not client_id or not client_secret:
                 fail("ZITADEL did not return local OIDC client credentials")
 
+        OUTPUT_FILE.touch(mode=0o600, exist_ok=True)
+        OUTPUT_FILE.chmod(0o600)
         OUTPUT_FILE.write_text(
             "\n".join(
                 [
@@ -118,8 +121,9 @@ def main() -> int:
                     f"AUTH_ZITADEL_ISSUER={ISSUER}",
                     f"OIDC_ISSUER={ISSUER}",
                     f"OIDC_JWKS_URL={ISSUER}/oauth/v2/keys",
+                    f"OIDC_USERINFO_URL={ISSUER}/oidc/v1/userinfo",
                     f"OIDC_AUDIENCE={project_id}",
-                    "OIDC_REQUIRED_SCOPES=openid",
+                    "OIDC_REQUIRED_SCOPES=",
                     "",
                 ]
             ),

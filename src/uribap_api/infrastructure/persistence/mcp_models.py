@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from uribap_api.infrastructure.persistence.base import Base
@@ -11,6 +11,7 @@ from uribap_api.infrastructure.persistence.base import Base
 
 class McpToken(Base):
     __tablename__ = "mcp_token"
+    __table_args__ = (UniqueConstraint("token_hash", name="uq_mcp_token_hash"),)
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     household_id: Mapped[UUID] = mapped_column(

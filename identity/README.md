@@ -52,7 +52,19 @@ After the stack is ready, run the redacted seed helper from the API repository:
 uv run python identity/scripts/seed-local-oidc.py
 ```
 
-The helper verifies discovery/JWKS/Mailpit and prints setup guidance. It must never print a client secret, access token, refresh token, password, or masterkey. Creating an OIDC application requires the disposable Console/Admin API credentials created for this local stack; those values remain outside Git.
+The helper verifies discovery/JWKS/Mailpit and prints setup guidance. It must never print a client secret, access token, refresh token, password, or masterkey. Creating an OIDC application requires the disposable Console/Admin API credentials created for this local stack; those values remain outside Git. The helper does not update existing OIDC applications; manually configure a reused application for JWT access tokens and ID-token UserInfo profile assertions.
+
+## OIDC application settings and profile claims
+
+The API validates signed JWT access tokens for authentication and authorization. When the default ZITADEL profile fields are needed, configure the optional, same-origin UserInfo endpoint:
+
+```text
+OIDC_USERINFO_URL=http://localhost:8080/oidc/v1/userinfo
+```
+
+Production must use HTTPS. The API retrieves profile data only after access-token validation and requires the UserInfo subject to match the token subject. Configure the ZITADEL application for JWT access tokens, Basic client authentication, authorization-code flow with PKCE, refresh-token grant, and ID-token UserInfo profile assertions. The API audience is the ZITADEL project ID; the Web application uses its OIDC client ID and secret.
+
+Stock ZITADEL 4.16 JWT access tokens do not contain a signed `scope` claim. Keep `OIDC_REQUIRED_SCOPES` empty (the API's optional default and local seed output); do not synthesize scopes from UserInfo, which supplies profile fields only. Nonempty requirements remain enforced and will reject a token without the required provider-signed scope claim unless a separately designed introspection integration is introduced.
 
 ## Use from API and Web
 
@@ -61,10 +73,13 @@ For host processes:
 ```text
 OIDC_ISSUER=http://localhost:8080
 OIDC_JWKS_URL=http://localhost:8080/oauth/v2/keys
+OIDC_USERINFO_URL=http://localhost:8080/oidc/v1/userinfo
+OIDC_USERINFO_CONNECT_HOST=
+OIDC_REQUIRED_SCOPES=
 AUTH_ZITADEL_ISSUER=http://localhost:8080
 ```
 
-For containers that reach services through the host, use the container-specific `host.docker.internal` URL and keep `extra_hosts` enabled. Do not change a production issuer to accommodate local Docker.
+For local API containers, keep `OIDC_USERINFO_URL` on the public local issuer origin (`http://localhost:8080/oidc/v1/userinfo`) and set `OIDC_USERINFO_CONNECT_HOST=host.docker.internal`. The API connects to the Docker host through that alias while preserving `Host: localhost:8080`; Compose supplies `extra_hosts: host.docker.internal:host-gateway`. Host-process development leaves the connect host empty. Production MUST leave it empty and use a same-origin HTTPS URL. Do not change a production issuer to accommodate local Docker.
 
 The Web callback must be registered in the synthetic local ZITADEL application:
 
@@ -72,7 +87,7 @@ The Web callback must be registered in the synthetic local ZITADEL application:
 http://localhost:3000/api/auth/callback/zitadel
 ```
 
-The API can test basic OIDC/JWKS without SMTP. Complete verification/reset/invitation tests require Mailpit and inspect messages through its API/UI.
+Register `http://localhost:3000/` as the post-logout redirect URI. Identity verification and recovery email text is configured at the ZITADEL organization level under Organization Settings → Message Texts; visual appearance is a separate Branding setting. These organization settings are distinct from the per-project OIDC application settings on the shared instance. The API can test basic OIDC/JWKS without SMTP. Complete verification/reset/invitation tests require Mailpit and inspect messages through its API/UI.
 
 ## Stop without deleting data
 

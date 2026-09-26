@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -26,6 +27,8 @@ class Settings(BaseSettings):
     oidc_issuer: str = ""
     oidc_audience: str = ""
     oidc_jwks_url: str = ""
+    oidc_userinfo_url: str = ""
+    oidc_userinfo_connect_host: Literal["", "host.docker.internal"] = ""
     oidc_jwks_host: str = ""
     oidc_algorithms: str = "RS256"
     oidc_required_scopes: str = ""
@@ -46,6 +49,51 @@ class Settings(BaseSettings):
     def validate_production_configuration(self) -> Settings:
         if self.environment == "production" and "localhost" in str(self.database_url):
             raise ValueError("DATABASE_URL must not point to localhost in production")
+        if self.oidc_userinfo_url:
+            issuer = urlsplit(self.oidc_issuer)
+            userinfo = urlsplit(self.oidc_userinfo_url)
+            if (
+                issuer.scheme not in {"http", "https"}
+                or not issuer.hostname
+                or userinfo.scheme not in {"http", "https"}
+                or not userinfo.hostname
+                or issuer.username is not None
+                or issuer.password is not None
+                or userinfo.username is not None
+                or userinfo.password is not None
+                or userinfo.query
+                or userinfo.fragment
+            ):
+                raise ValueError(
+                    "OIDC_USERINFO_URL requires a valid credential-free issuer and endpoint"
+                )
+            issuer_origin = (
+                issuer.scheme,
+                issuer.hostname,
+                issuer.port
+                if issuer.port is not None
+                else (443 if issuer.scheme == "https" else 80),
+            )
+            userinfo_origin = (
+                userinfo.scheme,
+                userinfo.hostname,
+                userinfo.port
+                if userinfo.port is not None
+                else (443 if userinfo.scheme == "https" else 80),
+            )
+            if userinfo_origin != issuer_origin:
+                raise ValueError("OIDC_USERINFO_URL must share the OIDC_ISSUER origin")
+            if self.oidc_userinfo_connect_host and (
+                self.environment == "production"
+                or issuer.scheme != "http"
+                or issuer.hostname not in {"localhost", "127.0.0.1", "::1"}
+            ):
+                raise ValueError(
+                    "OIDC_USERINFO_CONNECT_HOST is only supported for local HTTP "
+                    "issuers outside production"
+                )
+            if self.environment == "production" and userinfo.scheme != "https":
+                raise ValueError("OIDC_USERINFO_URL must use HTTPS in production")
         return self
 
     @property

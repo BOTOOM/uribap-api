@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import Any
 
 import jwt
@@ -10,6 +11,19 @@ from uribap_api.infrastructure.identity.claims import (
     require_scopes,
 )
 from uribap_api.infrastructure.identity.jwks_cache import JWKSCache
+from uribap_api.infrastructure.identity.userinfo import UserInfoClient
+
+
+def _display_name(payload: dict[str, Any], profile: dict[str, Any]) -> str | None:
+    for source in (
+        profile.get("name"),
+        profile.get("preferred_username"),
+        payload.get("name"),
+        payload.get("preferred_username"),
+    ):
+        if isinstance(source, str) and source:
+            return source
+    return None
 
 
 class TokenValidator:
@@ -20,6 +34,15 @@ class TokenValidator:
             host_header=settings.oidc_jwks_host,
             ttl_seconds=settings.oidc_jwks_ttl_seconds,
             timeout_seconds=settings.oidc_timeout_seconds,
+        )
+        self.userinfo = (
+            UserInfoClient(
+                settings.oidc_userinfo_url,
+                timeout_seconds=settings.oidc_timeout_seconds,
+                connect_host=settings.oidc_userinfo_connect_host,
+            )
+            if settings.oidc_userinfo_url
+            else None
         )
 
     async def validate(self, token: str) -> IdentityClaims:
@@ -51,6 +74,23 @@ class TokenValidator:
             ) from exc
         claims = parse_identity_claims(payload, expected_issuer=self.settings.oidc_issuer)
         require_scopes(claims, self.settings.oidc_required_scopes_set)
+        if self.userinfo is not None:
+            profile = await self.userinfo.get_profile(token, subject=claims.subject)
+            enriched_payload = {
+                **payload,
+                "email": profile["email"],
+                "email_verified": profile["email_verified"],
+            }
+            for field in ("name", "preferred_username"):
+                if profile[field] is not None:
+                    enriched_payload[field] = profile[field]
+            claims = replace(
+                claims,
+                email=profile["email"],
+                email_verified=profile["email_verified"],
+                display_name=_display_name(payload, profile),
+                raw=enriched_payload,
+            )
         return claims
 
     async def ready(self) -> bool:

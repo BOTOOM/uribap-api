@@ -130,4 +130,15 @@ As a household owner or administrator, I want to invite people, assign roles, an
 - The API remains a modular monolith with direct, reviewed SQLAlchemy/Alembic persistence and no queue or external identity microservice.
 - Email delivery is represented through a local outbox/notification boundary; Mailpit is the only SMTP endpoint in local and CI-like identity tests.
 - Production Brevo configuration is documented separately and is not part of local feature acceptance.
-- Password storage, social-provider credential management, nutrition, recipes, inventory, forecasting, shopping, and preparation calculations remain outside this feature.
+- Password storage, social-provider credential management, nutrition, recipes, inventory, forecasting, shopping, preparation calculations, and login UI rendering remain outside this API feature.
+
+## Deployment Readiness Amendment
+
+Clarification: the user requested production OIDC corrections and a separate Uribap-branded login while retaining a shared ZITADEL instance. The API continues to accept access tokens only; it never receives login passwords. The custom Login V2 presentation belongs to the Web repository and does not change the issuer or household authorization model.
+
+- **FR-017**: When an operator configures profile retrieval, the API MUST obtain profile fields from the trusted identity provider only after access-token signature, issuer, audience, expiration, subject, and required scopes have passed validation. The returned subject MUST match the validated token subject.
+- **FR-018**: Profile retrieval MUST NOT replace authorization claims, follow redirects carrying bearer credentials, accept a different provider origin, or expose credentials/provider bodies in errors. A provider rejection produces a redacted authentication failure; malformed responses, redirects, and outages produce a redacted dependency failure.
+- **FR-019**: Verification status MUST remain a strict boolean supplied by the provider; missing or invalid profile data MUST NOT upgrade verification or bypass invitation email checks. Deployments without configured profile retrieval retain the existing signed-claim behavior.
+- **FR-020**: The local seed MUST configure JWT access tokens, confidential-client Basic authentication, refresh grants, and ID-token profile assertions. The seed MUST preserve existing client credentials, restrict generated credential-file permissions, and never print credentials.
+
+Acceptance: valid JWTs without profile claims are enriched from a matching UserInfo subject; a mismatched subject is rejected; invalid JWTs or insufficient scopes cause no UserInfo request; token security claims cannot be overwritten by UserInfo; missing/false verification stays false; provider redirects/errors are redacted; existing JWT-only configurations still work. No schema or public response shape changes are required.
