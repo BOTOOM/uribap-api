@@ -7,8 +7,8 @@ from uuid import UUID
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, Field
-from sqlalchemy import select
+from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy import case, select
 
 from uribap_api.api.recipe_schemas import (
     IngredientCreate,
@@ -58,11 +58,14 @@ class RecipeLineInput(BaseModel):
 def _line_amount(line: RecipeLineInput) -> Decimal:
     try:
         amount = Decimal(line.amount)
-    except InvalidOperation as exc:
-        raise ToolError(f"Ingredient amount '{line.amount}' must be a positive decimal.") from exc
-    if not amount.is_finite() or amount <= 0:
-        raise ToolError(f"Ingredient amount '{line.amount}' must be a positive decimal.")
-    return amount
+        return RecipeVersionIngredientUpsert(
+            ingredient_id=UUID(int=0),
+            amount=amount,
+            unit=line.unit,
+            optional=line.optional,
+        ).amount
+    except (InvalidOperation, ValueError, ValidationError) as exc:
+        raise ToolError(str(exc)) from exc
 
 
 def _resolve_lines(
@@ -101,15 +104,8 @@ def _resolve_lines(
             normalized_name = normalize_ingredient_name(line.ingredient_name or "")
         except ValueError as exc:
             raise ToolError(str(exc)) from exc
-        ingredient = next(
-            (
-                candidate
-                for candidate in ingredient_service.list_ingredients(
-                    session, membership, line.ingredient_name, None, True, 100
-                )
-                if candidate.normalized_name == normalized_name
-            ),
-            None,
+        ingredient = ingredient_service.find_by_name(
+            session, membership, line.ingredient_name or ""
         )
         if ingredient is not None:
             try:
@@ -163,6 +159,7 @@ def _create_resolved_lines(
                         dimension=dimension,
                         base_unit=line.unit,
                     ),
+                    commit=False,
                 )
                 created_by_name[normalized_name] = ingredient
                 created_names.append(ingredient.name)
@@ -387,13 +384,37 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                 recipe = recipe_service.get_recipe(session, membership, recipe_uuid)
             else:
                 normalized_name = recipe_service.normalize_recipe_name(recipe_name or "")
-                recipe = session.scalar(
-                    select(Recipe).where(
-                        Recipe.household_id == membership.household_id,
-                        Recipe.normalized_name == normalized_name,
+                candidates = list(
+                    session.scalars(
+                        select(Recipe)
+                        .where(
+                            Recipe.household_id == membership.household_id,
+                            Recipe.normalized_name == normalized_name,
+                        )
+                        .order_by(
+                            case((Recipe.archived_at.is_(None), 0), else_=1),
+                            Recipe.id,
+                        )
                     )
                 )
-                if recipe is None:
+                active = [candidate for candidate in candidates if candidate.archived_at is None]
+                if len(active) > 1:
+                    ids = ", ".join(str(candidate.id) for candidate in active)
+                    raise ToolError(
+                        f"Multiple active recipes named '{recipe_name}' found; "
+                        f"candidate IDs: {ids}."
+                    )
+                if active:
+                    recipe = active[0]
+                elif len(candidates) > 1:
+                    ids = ", ".join(str(candidate.id) for candidate in candidates)
+                    raise ToolError(
+                        f"Multiple archived recipes named '{recipe_name}' found; "
+                        f"candidate IDs: {ids}."
+                    )
+                elif candidates:
+                    recipe = candidates[0]
+                else:
                     raise ToolError(f"Recipe '{recipe_name}' not found.")
             versions = list(
                 session.scalars(
@@ -481,15 +502,24 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                 session,
                 membership,
                 recipe_payload,
+                commit=False,
             )
             recipe_service.replace_version_ingredients(
-                session, membership, recipe.id, 1, RecipeVersionIngredientsPut(items=items)
+                session,
+                membership,
+                recipe.id,
+                1,
+                RecipeVersionIngredientsPut(items=items),
+                commit=False,
             )
             version = recipe_service.get_version(session, membership, recipe.id, 1)
             published = False
             if publish:
-                recipe_service.publish_version(session, membership, recipe.id, 1)
+                recipe_service.publish_version(
+                    session, membership, recipe.id, 1, commit=False
+                )
                 published = True
+            session.commit()
             return {
                 "recipe_id": str(recipe.id),
                 "name": recipe.name,
@@ -561,6 +591,21 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                 )
                 raise DomainError("conflict", "Recipe archived", detail, 409)
 
+            try:
+                revision = (
+                    RecipeRevision(
+                        base_servings=base_servings,
+                        prep_minutes=prep_minutes,
+                        items=None,
+                        publish=publish,
+                    )
+                    if has_content
+                    else None
+                )
+                update = RecipeUpdate(**metadata) if metadata else None
+            except ValidationError as exc:
+                raise ToolError(str(exc)) from exc
+
             resolved = (
                 _resolve_lines(session, membership, ingredients)
                 if ingredients is not None
@@ -571,22 +616,28 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                 if resolved is not None
                 else (None, [])
             )
-            revision = RecipeRevision(
-                base_servings=base_servings,
-                prep_minutes=prep_minutes,
-                items=revision_items,
-                publish=publish,
-            )
-            update = RecipeUpdate(**metadata) if metadata else None
+            if revision is not None and revision_items is not None:
+                revision = revision.model_copy(update={"items": revision_items})
 
             if has_content:
+                assert revision is not None
                 version = recipe_service.revise_recipe(
-                    session, membership, recipe_uuid, revision
+                    session,
+                    membership,
+                    recipe_uuid,
+                    revision,
+                    commit=False,
                 )
             else:
                 version = None
             recipe = (
-                recipe_service.update_recipe(session, membership, recipe_uuid, update)
+                recipe_service.update_recipe(
+                    session,
+                    membership,
+                    recipe_uuid,
+                    update,
+                    commit=False,
+                )
                 if update is not None
                 else recipe_service.get_recipe(session, membership, recipe_uuid)
             )
@@ -596,6 +647,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                     .where(RecipeVersion.recipe_id == recipe.id)
                     .order_by(RecipeVersion.version_number.desc())
                 )
+            session.commit()
             return {
                 "recipe_id": str(recipe.id),
                 "name": recipe.name,

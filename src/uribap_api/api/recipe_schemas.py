@@ -96,7 +96,7 @@ class RecipeVersionCreate(BaseModel):
 
 class RecipeVersionIngredientUpsert(BaseModel):
     ingredient_id: UUID
-    amount: Decimal = Field(gt=0)
+    amount: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
     unit: str = Field(min_length=1, max_length=8)
     optional: bool = False
 

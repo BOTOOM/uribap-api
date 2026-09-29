@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from threading import Event, Thread
 from uuid import uuid4
 
 import pytest
@@ -12,6 +13,7 @@ from uribap_api.api.recipe_schemas import (
     RecipeRevision,
     RecipeUpdate,
     RecipeVersionCreate,
+    RecipeVersionIngredientsPut,
     RecipeVersionIngredientUpsert,
 )
 from uribap_api.application.planning_service import add_entry, create_plan
@@ -23,6 +25,7 @@ from uribap_api.application.recipe_service import (
     list_recipes,
     list_version_ingredients,
     publish_version,
+    replace_version_ingredients,
     revise_recipe,
     unarchive_recipe,
     update_recipe,
@@ -34,7 +37,7 @@ from uribap_api.domain.shared.errors import DomainError
 from uribap_api.infrastructure.persistence.household_models import Household, HouseholdMember
 from uribap_api.infrastructure.persistence.identity_models import AppUser
 from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
-from uribap_api.infrastructure.persistence.recipe_models import RecipeVersion
+from uribap_api.infrastructure.persistence.recipe_models import Recipe, RecipeVersion
 
 pytestmark = pytest.mark.integration
 
@@ -227,6 +230,96 @@ def test_archived_recipe_cannot_be_updated_or_revised_and_is_hidden(integration_
             for row, _version in list_recipes(session, member, None, False, 50)
         )
         assert list_published_versions(session, member) == []
+
+
+@pytest.mark.parametrize(
+    "operation", ["create_version", "replace_version_ingredients", "publish_version"]
+)
+def test_archived_recipe_rejects_all_version_writes(integration_engine, operation: str) -> None:
+    with Session(integration_engine) as session:
+        member = _member(session)
+        recipe = _recipe(session, member)
+        archive_recipe(session, member, recipe.id)
+
+        with pytest.raises(DomainError) as excinfo:
+            if operation == "create_version":
+                create_version(session, member, recipe.id, RecipeVersionCreate())
+            elif operation == "replace_version_ingredients":
+                replace_version_ingredients(
+                    session,
+                    member,
+                    recipe.id,
+                    1,
+                    RecipeVersionIngredientsPut(items=[]),
+                )
+            else:
+                publish_version(session, member, recipe.id, 1)
+
+        assert excinfo.value.status_code == 409
+        assert excinfo.value.title == "Recipe archived"
+
+
+def test_publish_and_replace_lock_recipe_before_version_writes(integration_engine) -> None:
+    with Session(integration_engine) as session:
+        member = _member(session)
+        publish_recipe = _recipe(session, member)
+        replace_recipe = _recipe(session, member)
+        member_snapshot = HouseholdMember(
+            id=member.id,
+            household_id=member.household_id,
+            user_id=member.user_id,
+            role=member.role,
+            status=member.status,
+        )
+        publish_recipe_id = publish_recipe.id
+        replace_recipe_id = replace_recipe.id
+
+    def blocks_on_recipe_lock(recipe_id, operation) -> bool:
+        with integration_engine.connect() as lock_connection:
+            lock_connection.execute(
+                select(Recipe.id).where(Recipe.id == recipe_id).with_for_update()
+            )
+            finished = Event()
+            failures: list[BaseException] = []
+
+            def run_operation() -> None:
+                try:
+                    with Session(integration_engine) as worker_session:
+                        operation(worker_session)
+                except BaseException as exc:
+                    failures.append(exc)
+                finally:
+                    finished.set()
+
+            worker = Thread(target=run_operation, daemon=True)
+            worker.start()
+            try:
+                was_blocked = not finished.wait(timeout=1)
+            finally:
+                lock_connection.commit()
+            worker.join(timeout=10)
+
+        assert not worker.is_alive()
+        assert not failures
+        return was_blocked
+
+    publish_blocked = blocks_on_recipe_lock(
+        publish_recipe_id,
+        lambda session: publish_version(session, member_snapshot, publish_recipe_id, 1),
+    )
+    replace_blocked = blocks_on_recipe_lock(
+        replace_recipe_id,
+        lambda session: replace_version_ingredients(
+            session,
+            member_snapshot,
+            replace_recipe_id,
+            1,
+            RecipeVersionIngredientsPut(items=[]),
+        ),
+    )
+
+    assert publish_blocked
+    assert replace_blocked
 
 
 def test_archived_recipe_version_cannot_be_added_to_a_plan(integration_engine) -> None:

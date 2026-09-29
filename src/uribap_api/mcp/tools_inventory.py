@@ -8,19 +8,44 @@ from uuid import UUID, uuid4
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import Field, TypeAdapter, ValidationError
 from sqlalchemy import select
 
-from uribap_api.api.inventory_schemas import InventoryAdjustment, InventoryLotCreate
+from uribap_api.api.inventory_schemas import (
+    InventoryAdjustment,
+    InventoryLotCreate,
+    InventoryLotQuantity,
+)
 from uribap_api.api.recipe_schemas import IngredientCreate
 from uribap_api.application import forecast_service, ingredient_service, inventory_service
-from uribap_api.domain.ingredients.policies import UNIT_DIMENSIONS, normalize_ingredient_name
-from uribap_api.domain.inventory.ledger import InventoryLocation, InventoryMovementType
+from uribap_api.domain.ingredients.policies import (
+    UNIT_DIMENSIONS,
+    validate_unit_for_dimension,
+)
+from uribap_api.domain.inventory.ledger import (
+    InventoryLedgerError,
+    InventoryLocation,
+    InventoryMovementType,
+    quantize_amount,
+)
 from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
 from uribap_api.mcp.runtime import McpRuntime
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False)
+_PURCHASE_QUANTITY = TypeAdapter(InventoryLotQuantity)
+
+
+def _validated_purchase_quantity(value: str) -> Decimal:
+    try:
+        amount = Decimal(value)
+    except (InvalidOperation, ValueError) as exc:
+        raise ToolError(f"Quantity '{value}' must be a positive decimal.") from exc
+    try:
+        quantize_amount(amount, allow_zero=False)
+        return _PURCHASE_QUANTITY.validate_python(amount)
+    except (InventoryLedgerError, ValidationError) as exc:
+        raise ToolError(f"Quantity '{value}' is invalid: {exc}") from exc
 
 
 def _lot_row(lot, ingredient_name: str | None) -> dict:
@@ -153,12 +178,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         def run(session, membership, _p):
             if (ingredient_id is None) == (ingredient_name is None):
                 raise ToolError("Provide exactly one of ingredient_id or ingredient_name.")
-            try:
-                amount = Decimal(quantity)
-            except InvalidOperation as exc:
-                raise ToolError(f"Quantity '{quantity}' must be a positive decimal.") from exc
-            if not amount.is_finite() or amount <= 0:
-                raise ToolError(f"Quantity '{quantity}' must be a positive decimal.")
+            amount = _validated_purchase_quantity(quantity)
 
             auto_created = False
             if ingredient_id is not None:
@@ -168,34 +188,30 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                     raise ToolError(f"Invalid ingredient UUID '{ingredient_id}'.") from exc
                 ingredient = ingredient_service.get_ingredient(session, membership, resolved_id)
             else:
-                try:
-                    normalized_name = normalize_ingredient_name(ingredient_name or "")
-                except ValueError as exc:
-                    raise ToolError(str(exc)) from exc
-                ingredient = next(
-                    (
-                        candidate
-                        for candidate in ingredient_service.list_ingredients(
-                            session, membership, ingredient_name, None, True, 100
-                        )
-                        if candidate.normalized_name == normalized_name
-                    ),
-                    None,
+                ingredient = ingredient_service.find_by_name(
+                    session, membership, ingredient_name or ""
                 )
                 if ingredient is None:
                     dimension = UNIT_DIMENSIONS.get(unit)
                     if dimension is None:
                         raise ToolError(f"Unknown unit '{unit}'.")
+                    ingredient_payload = IngredientCreate(
+                        name=ingredient_name or "",
+                        dimension=dimension,
+                        base_unit=unit,
+                    )
                     ingredient = ingredient_service.create_ingredient(
                         session,
                         membership,
-                        IngredientCreate(
-                            name=ingredient_name or "",
-                            dimension=dimension,
-                            base_unit=unit,
-                        ),
+                        ingredient_payload,
+                        commit=False,
                     )
                     auto_created = True
+                else:
+                    try:
+                        validate_unit_for_dimension(ingredient.dimension, unit)
+                    except ValueError as exc:
+                        raise ToolError(str(exc)) from exc
             lot = inventory_service.create_lot(
                 session,
                 membership,

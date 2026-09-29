@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -22,9 +23,12 @@ class ProblemDetails(BaseModel):
     requestId: str | None = None
 
 
+InventoryLotQuantity = Annotated[Decimal, Field(gt=0, max_digits=18, decimal_places=6)]
+
+
 class InventoryLotCreate(BaseModel):
     ingredient_id: UUID
-    quantity: Decimal = Field(gt=0)
+    quantity: InventoryLotQuantity
     unit: str
     location: InventoryLocation
     expiration_date: date | None = None

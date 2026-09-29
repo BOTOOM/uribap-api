@@ -7,3 +7,7 @@
 - [x] `.env.example` and Coolify/foundation docs describe automatic migration and rolling safety
 - [x] Build and run image against fresh DB; verify upgrade, no-op restart, readiness, and failure exit
 - [x] Ruff, pyright, tests, and `alembic check` pass
+
+## Review follow-up
+
+- [x] Add a PostgreSQL integration test that holds `MIGRATION_ADVISORY_LOCK_ID`, verifies `main()` remains blocked, then releases the lock and verifies successful completion within a timeout.

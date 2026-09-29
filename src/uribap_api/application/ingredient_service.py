@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,11 @@ from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
 
 
 def create_ingredient(
-    session: Session, membership: HouseholdMember, payload: IngredientCreate
+    session: Session,
+    membership: HouseholdMember,
+    payload: IngredientCreate,
+    *,
+    commit: bool = True,
 ) -> Ingredient:
     ingredient = Ingredient(
         household_id=membership.household_id,
@@ -28,16 +32,49 @@ def create_ingredient(
         package_size_unit=payload.package_size_unit,
         created_by_user_id=membership.user_id,
     )
-    session.add(ingredient)
+    if commit:
+        session.add(ingredient)
+        try:
+            session.commit()
+        except IntegrityError as exc:
+            session.rollback()
+            raise DomainError(
+                "conflict", "Ingredient conflict", "The ingredient already exists.", 409
+            ) from exc
+        session.refresh(ingredient)
+        return ingredient
     try:
-        session.commit()
+        with session.begin_nested():
+            session.add(ingredient)
+            session.flush()
     except IntegrityError as exc:
-        session.rollback()
         raise DomainError(
             "conflict", "Ingredient conflict", "The ingredient already exists.", 409
         ) from exc
-    session.refresh(ingredient)
     return ingredient
+
+
+def find_by_name(
+    session: Session, membership: HouseholdMember, name: str
+) -> Ingredient | None:
+    normalized_name = normalize_ingredient_name(name)
+    statement = (
+        select(Ingredient)
+        .where(
+            Ingredient.normalized_name == normalized_name,
+            Ingredient.archived_at.is_(None),
+            or_(
+                Ingredient.household_id == membership.household_id,
+                Ingredient.household_id.is_(None),
+            ),
+        )
+        .order_by(
+            case((Ingredient.household_id == membership.household_id, 0), else_=1),
+            Ingredient.id,
+        )
+        .limit(1)
+    )
+    return session.scalar(statement)
 
 
 def list_ingredients(

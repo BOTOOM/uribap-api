@@ -12,3 +12,19 @@
 - [x] MCP transport tests for the new/fixed tools
 - [x] OpenAPI regenerated
 - [x] ruff, pyright, pytest, alembic check, export --check green
+
+## Review follow-up
+
+- [x] R001 Make MCP create/update/purchase writes atomic with keyword-only service `commit` options; create one final transaction commit per tool call.
+- [x] R002 Bound recipe ingredient and purchase amounts to the persisted NUMERIC(18,6) range; validate MCP inputs before writes and regenerate OpenAPI.
+- [x] R003 Resolve ingredients by exact normalized household/global name, preferring household rows; handle archived-name conflicts according to the partial unique indexes.
+- [x] R004 Resolve recipe names deterministically, preferring the sole active match and reporting candidate IDs for ambiguous matches.
+- [x] R005 Apply the shared archived-recipe edit guard to version creation, ingredient replacement, publishing, metadata updates, and revisions.
+- [x] R006 Lock the recipe row before publish and ingredient replacement to serialize competing version writes; do not add a unique index on published versions.
+- [x] R007 Add real-PostgreSQL coverage proving the migration advisory lock blocks a concurrent `migrate.main()` until released.
+- [x] R008 Add Spec Kit checklists, analysis, and convergence records for specs 014 and 015.
+
+## Convergence
+
+R001–R008 are implemented and verified. The review follow-up keeps the existing partial
+ingredient uniqueness predicates and does not add a published-version unique index.
