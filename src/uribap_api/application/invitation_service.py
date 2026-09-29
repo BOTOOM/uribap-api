@@ -21,6 +21,7 @@ from uribap_api.domain.shared.errors import DomainError
 from uribap_api.infrastructure.email.outbox import queue_email
 from uribap_api.infrastructure.persistence.household_models import (
     EmailOutboxEntry,
+    Household,
     HouseholdInvitation,
     HouseholdMember,
     OutboxKind,
@@ -182,6 +183,71 @@ def accept_invitation(
             "The invitation is invalid or expired.",
             400,
         )
+    return _accept_locked_invitation(
+        session,
+        invitation=invitation,
+        user=user,
+        request_id=request_id,
+    )
+
+
+def accept_invitation_by_id(
+    session: Session,
+    *,
+    invitation_id: UUID,
+    user: AppUser,
+    request_id: str,
+) -> HouseholdMember:
+    _require_verified_email(user)
+    invitation = session.scalar(
+        select(HouseholdInvitation)
+        .where(HouseholdInvitation.id == invitation_id)
+        .with_for_update()
+    )
+    if invitation is None or normalize_email(user.email or "") != invitation.invited_email:
+        raise DomainError(
+            "not_found", "Invitation not found", "The invitation could not be found.", 404
+        )
+    return _accept_locked_invitation(
+        session,
+        invitation=invitation,
+        user=user,
+        request_id=request_id,
+    )
+
+
+def list_pending_invitations(
+    session: Session, user: AppUser
+) -> list[tuple[HouseholdInvitation, str, str | None]]:
+    if not user.email or not user.email_verified:
+        return []
+    email = normalize_email(user.email)
+    now = datetime.now(UTC)
+    rows = session.execute(
+        select(HouseholdInvitation, Household.name, AppUser.display_name)
+        .join(Household, Household.id == HouseholdInvitation.household_id)
+        .outerjoin(AppUser, AppUser.id == HouseholdInvitation.invited_by_user_id)
+        .where(
+            HouseholdInvitation.invited_email == email,
+            HouseholdInvitation.status == InvitationStatus.PENDING,
+            HouseholdInvitation.expires_at > now,
+        )
+        .order_by(HouseholdInvitation.expires_at.asc())
+    ).all()
+    return [
+        (invitation, household_name, inviter_display_name)
+        for invitation, household_name, inviter_display_name in rows
+    ]
+
+
+def _accept_locked_invitation(
+    session: Session,
+    *,
+    invitation: HouseholdInvitation,
+    user: AppUser,
+    request_id: str,
+) -> HouseholdMember:
+    _require_verified_email(user)
     now = datetime.now(UTC)
     if not invitation_is_usable(invitation.status, invitation.expires_at, now):
         if invitation.status == InvitationStatus.PENDING:
@@ -193,7 +259,7 @@ def accept_invitation(
             "The invitation is invalid or expired.",
             400,
         )
-    if normalize_email(user.email) != invitation.invited_email:
+    if normalize_email(user.email or "") != invitation.invited_email:
         raise DomainError(
             "forbidden",
             "Permission denied",
@@ -262,3 +328,8 @@ def accept_invitation(
     session.commit()
     session.refresh(member)
     return member
+
+
+def _require_verified_email(user: AppUser) -> None:
+    if not user.email or not user.email_verified:
+        raise DomainError("forbidden", "Permission denied", "A verified email is required.", 403)

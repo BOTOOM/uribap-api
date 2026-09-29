@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     oidc_jwks_ttl_seconds: int = Field(default=300, ge=10, le=3600)
     oidc_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     oidc_clock_skew_seconds: int = Field(default=30, ge=0, le=300)
+    zitadel_api_url: str = ""
+    zitadel_service_token: str = Field(default="", repr=False)
+    zitadel_organization_id: str = ""
+    zitadel_invite_url_template: str = Field(default="", max_length=200)
+    zitadel_invite_application_name: str = "Uribap"
     smtp_host: str = "localhost"
     smtp_port: int = Field(default=1025, ge=1, le=65535)
     smtp_username: str = ""
@@ -49,6 +54,18 @@ class Settings(BaseSettings):
     def validate_production_configuration(self) -> Settings:
         if self.environment == "production" and "localhost" in str(self.database_url):
             raise ValueError("DATABASE_URL must not point to localhost in production")
+        self.zitadel_api_url = (self.zitadel_api_url or self.oidc_issuer).rstrip("/")
+        if bool(self.zitadel_service_token) != bool(self.zitadel_organization_id):
+            raise ValueError(
+                "ZITADEL_SERVICE_TOKEN and ZITADEL_ORGANIZATION_ID must be configured together"
+            )
+        if not self.zitadel_invite_url_template:
+            self.zitadel_invite_url_template = (
+                f"{self.zitadel_api_url}/ui/v2/login/verify?code={{{{.Code}}}}"
+                f"&userId={{{{.UserID}}}}&organization={{{{.OrgID}}}}&invite=true"
+            )
+        if len(self.zitadel_invite_url_template) > 200:
+            raise ValueError("ZITADEL_INVITE_URL_TEMPLATE must be at most 200 characters")
         if self.oidc_userinfo_url:
             issuer = urlsplit(self.oidc_issuer)
             userinfo = urlsplit(self.oidc_userinfo_url)
@@ -94,6 +111,19 @@ class Settings(BaseSettings):
                 )
             if self.environment == "production" and userinfo.scheme != "https":
                 raise ValueError("OIDC_USERINFO_URL must use HTTPS in production")
+        if self.environment == "production":
+            try:
+                zitadel_url = urlsplit(self.zitadel_api_url)
+                valid_zitadel_url = (
+                    zitadel_url.scheme == "https"
+                    and bool(zitadel_url.hostname)
+                    and zitadel_url.username is None
+                    and zitadel_url.password is None
+                )
+            except ValueError:
+                valid_zitadel_url = False
+            if not valid_zitadel_url:
+                raise ValueError("ZITADEL_API_URL must use HTTPS in production")
         return self
 
     @property
@@ -109,6 +139,10 @@ class Settings(BaseSettings):
     @property
     def oidc_required_scopes_set(self) -> set[str]:
         return {scope.strip() for scope in self.oidc_required_scopes.split() if scope.strip()}
+
+    @property
+    def zitadel_invitations_enabled(self) -> bool:
+        return bool(self.zitadel_service_token and self.zitadel_organization_id)
 
 
 @lru_cache

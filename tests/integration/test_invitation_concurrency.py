@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 from uribap_api.api.schemas import InvitationCreate
 from uribap_api.application.invitation_service import accept_invitation, create_invitation
 from uribap_api.domain.identity.policies import MembershipRole, MembershipStatus
+from uribap_api.infrastructure.persistence.event_models import DomainEvent
 from uribap_api.infrastructure.persistence.household_models import (
+    AuditEvent,
     Household,
     HouseholdInvitation,
     HouseholdMember,
@@ -71,3 +73,21 @@ def test_invitation_is_hashed_and_consumed_for_verified_email(integration_engine
         stored = session.get(HouseholdInvitation, invitation.id)
         assert stored is not None
         assert stored.status.value == "accepted"
+        assert session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action == "invitation.accepted",
+                AuditEvent.target_id == invitation.id,
+            )
+        )
+        event_kinds = set(
+            session.scalars(
+                select(DomainEvent.kind).where(
+                    DomainEvent.aggregate_id.in_([invitation.id, member.id])
+                )
+            )
+        )
+        assert event_kinds == {
+            "invitation.created",
+            "invitation.accepted",
+            "household.member_added",
+        }

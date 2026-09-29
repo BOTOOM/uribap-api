@@ -95,6 +95,28 @@ OIDC_USERINFO_URL=https://zitadel.edwardiaz.dev/oidc/v1/userinfo
 
 The API retrieves default ZITADEL profile fields only after validating the signed JWT and any configured required scopes, and requires UserInfo `sub` to match the token. The optional UserInfo URL must remain on the issuer's HTTPS origin. Keep `OIDC_USERINFO_CONNECT_HOST` empty in production; the Docker host remap is only for local loopback HTTP development.
 
+### ZITADEL invitations
+
+Household invitation emails for new identities are sent by ZITADEL, not by the
+API's SMTP transport:
+
+1. In the ZITADEL console, open the Uribap organization → **Users → Service
+   Accounts → New**.
+2. Grant the service account **Org User Manager** in the organization under
+   **Managers/Authorizations**.
+3. Create a Personal Access Token for the service account.
+4. In the API's Coolify environment, set `ZITADEL_SERVICE_TOKEN` to that PAT
+   using secret storage and set `ZITADEL_ORGANIZATION_ID` to the Uribap
+   organization ID. `ZITADEL_API_URL` is optional and defaults to
+   `OIDC_ISSUER`; production URLs must use HTTPS.
+5. Optionally customize **Organization Settings → Message Texts → Invite
+   User** with Spanish instructions. Include a line asking the person to open
+   `https://uribap.edwardiaz.dev` after creating their access.
+
+ZITADEL sends these messages through its own `ZITADEL_SMTP_*` configuration.
+The API's `SMTP_*` settings are used for invitation email only when ZITADEL
+invitations are not configured.
+
 ### 5. Web on Vercel
 
 Project from the `web/` repo. Env vars:
@@ -111,7 +133,7 @@ Project from the `web/` repo. Env vars:
 Back on the API set `CORS_ORIGINS=https://uribap.edwardiaz.dev` and
 `WEB_BASE_URL=https://uribap.edwardiaz.dev` (email links).
 
-Identity verification and recovery email text is managed at the ZITADEL organization level under Organization Settings → Message Texts; visual appearance is a separate Branding setting. These organization settings are distinct from the per-project OIDC application configuration on the shared ZITADEL instance; do not change instance-wide branding or Login V2 routing for this project. Uribap's `infrastructure/email/mailer.py` constructs `text/plain` messages from `template_data["body"]`; Brevo is only the SMTP transport. `EMAIL_DELIVERY_ENABLED` remains `false`, so this setup does not enable delivery or send email.
+Identity verification and recovery email text is managed at the ZITADEL organization level under Organization Settings → Message Texts; visual appearance is a separate Branding setting. These organization settings are distinct from the per-project OIDC application configuration on the shared ZITADEL instance; do not change instance-wide branding or Login V2 routing for this project. Uribap's `infrastructure/email/mailer.py` constructs `text/plain` messages from `template_data["body"]`; Brevo is only the SMTP transport. `EMAIL_DELIVERY_ENABLED` controls only the outbox dispatcher and does not disable the synchronous SMTP fallback for household invitations when ZITADEL invitations are not configured.
 
 ## Build
 
@@ -140,13 +162,19 @@ Every setting maps to an environment variable consumed by `Settings`
 | `OIDC_USERINFO_URL` | optional profile enrichment | same origin as `OIDC_ISSUER`; HTTPS in production |
 | `OIDC_USERINFO_CONNECT_HOST` | local-only Docker-to-host UserInfo transport remap | empty in production; only `host.docker.internal` for loopback HTTP issuers |
 | `OIDC_REQUIRED_SCOPES` / `OIDC_JWKS_TTL_SECONDS` / `OIDC_TIMEOUT_SECONDS` / `OIDC_CLOCK_SKEW_SECONDS` | token policy | Keep scopes empty for stock ZITADEL 4.16 JWTs, which have no signed `scope` claim; configured scopes remain strict and UserInfo cannot supply them |
+| `ZITADEL_API_URL` | ZITADEL management API base URL | defaults to `OIDC_ISSUER`; HTTPS required in production |
+| `ZITADEL_SERVICE_TOKEN` | ZITADEL service-account PAT | secret; configure together with `ZITADEL_ORGANIZATION_ID` |
+| `ZITADEL_ORGANIZATION_ID` | organization for invited user accounts | configure together with `ZITADEL_SERVICE_TOKEN` |
+| `ZITADEL_INVITE_URL_TEMPLATE` | optional Login V2 invite URL | defaults to the Login V2 URL derived from `ZITADEL_API_URL` |
+| `ZITADEL_INVITE_APPLICATION_NAME` | displayed invitation application name | defaults to `Uribap` |
 | `CORS_ORIGINS` | allowed web origins | comma-separated; the Vercel app origin only |
 | `WEB_BASE_URL` | links in outbox emails | public web URL |
-| `SMTP_HOST`/`SMTP_PORT`/`SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM`/`SMTP_USE_TLS`/`SMTP_TIMEOUT_SECONDS` | mail transport | unused while delivery is disabled |
-| `EMAIL_DELIVERY_ENABLED` | master email switch | MUST stay `false`; when `false` the dispatcher records `suppressed` intents and never opens SMTP |
+| `SMTP_HOST`/`SMTP_PORT`/`SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM`/`SMTP_USE_TLS`/`SMTP_TIMEOUT_SECONDS` | application SMTP transport | used for household invitations only when ZITADEL invitations are not configured; used by the outbox dispatcher when enabled |
+| `EMAIL_DELIVERY_ENABLED` | outbox dispatcher switch | MUST stay `false`; controls only the dispatcher, which records `suppressed` intents and never opens SMTP when disabled |
 | `LOG_LEVEL` | logging | `INFO` |
 
-Secrets (`DATABASE_URL`, `OIDC_*` where applicable, `SMTP_PASSWORD`) are set in
+Secrets (`DATABASE_URL`, `OIDC_*` where applicable, `ZITADEL_SERVICE_TOKEN`,
+`SMTP_PASSWORD`) are set in
 Coolify's secret env storage — never committed. `.env.example` documents the
 full list with safe local placeholders.
 

@@ -43,6 +43,12 @@ def mark_sent(session: Session, entry_id: UUID) -> None:
         entry.attempts += 1
 
 
+def mark_suppressed(session: Session, entry_id: UUID) -> None:
+    entry = session.get(EmailOutboxEntry, entry_id)
+    if entry is not None:
+        entry.status = OutboxStatus.SUPPRESSED
+
+
 def mark_failed(session: Session, entry_id: UUID, detail: str) -> None:
     entry = session.get(EmailOutboxEntry, entry_id)
     if entry is not None:
