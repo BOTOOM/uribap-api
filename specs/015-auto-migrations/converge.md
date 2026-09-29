@@ -14,3 +14,5 @@ full-suite result is recorded in the submission report after the final run.
 ## Remaining work
 
 None.
+
+- Review follow-up: manual migration guidance now uses the advisory-locked module instead of raw Alembic CLI.

@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from threading import Event, Thread
 from uuid import uuid4
@@ -18,6 +18,7 @@ from uribap_api.api.recipe_schemas import (
 )
 from uribap_api.application.planning_service import add_entry, create_plan
 from uribap_api.application.recipe_service import (
+    _get_recipe_for_update,
     archive_recipe,
     create_recipe,
     create_version,
@@ -83,6 +84,16 @@ def _recipe(session: Session, member: HouseholdMember, name: str | None = None):
         session,
         member,
         RecipeCreate(name=name or f"Recipe {uuid4()}", base_servings=2, prep_minutes=10),
+    )
+
+
+def _member_snapshot(member: HouseholdMember) -> HouseholdMember:
+    return HouseholdMember(
+        id=member.id,
+        household_id=member.household_id,
+        user_id=member.user_id,
+        role=member.role,
+        status=member.status,
     )
 
 
@@ -264,13 +275,7 @@ def test_publish_and_replace_lock_recipe_before_version_writes(integration_engin
         member = _member(session)
         publish_recipe = _recipe(session, member)
         replace_recipe = _recipe(session, member)
-        member_snapshot = HouseholdMember(
-            id=member.id,
-            household_id=member.household_id,
-            user_id=member.user_id,
-            role=member.role,
-            status=member.status,
-        )
+        member_snapshot = _member_snapshot(member)
         publish_recipe_id = publish_recipe.id
         replace_recipe_id = replace_recipe.id
 
@@ -320,6 +325,104 @@ def test_publish_and_replace_lock_recipe_before_version_writes(integration_engin
 
     assert publish_blocked
     assert replace_blocked
+
+
+def test_update_recipe_waits_for_archive_and_rejects_after_lock_release(integration_engine):
+    with Session(integration_engine) as session:
+        member = _member(session)
+        recipe = _recipe(session, member)
+        member_snapshot = _member_snapshot(member)
+        recipe_id = recipe.id
+
+    started = Event()
+    finished = Event()
+    outcomes: list[Recipe | BaseException] = []
+
+    def run_update() -> None:
+        started.set()
+        try:
+            with Session(integration_engine) as worker_session:
+                outcomes.append(
+                    update_recipe(
+                        worker_session,
+                        member_snapshot,
+                        recipe_id,
+                        RecipeUpdate(name="Updated"),
+                    )
+                )
+        except BaseException as exc:
+            outcomes.append(exc)
+        finally:
+            finished.set()
+
+    with Session(integration_engine) as archive_session:
+        locked_recipe = _get_recipe_for_update(archive_session, member_snapshot, recipe_id)
+        locked_recipe.archived_at = datetime.now(UTC)
+        worker = Thread(target=run_update, daemon=True)
+        worker.start()
+        worker_started = started.wait(timeout=5)
+        update_blocked = worker_started and not finished.wait(timeout=0.5)
+        archive_session.commit()
+        worker.join(timeout=10)
+
+    assert worker_started
+    assert update_blocked
+    assert not worker.is_alive()
+    assert len(outcomes) == 1
+    assert isinstance(outcomes[0], DomainError)
+    assert outcomes[0].status_code == 409
+
+
+def test_concurrent_create_version_calls_use_distinct_numbers(integration_engine):
+    with Session(integration_engine) as session:
+        member = _member(session)
+        recipe = _recipe(session, member)
+        member_snapshot = _member_snapshot(member)
+        recipe_id = recipe.id
+
+    started = [Event(), Event()]
+    any_finished = Event()
+    outcomes: list[RecipeVersion | BaseException | None] = [None, None]
+
+    def run_create_version(index: int) -> None:
+        started[index].set()
+        try:
+            with Session(integration_engine) as worker_session:
+                outcomes[index] = create_version(
+                    worker_session,
+                    member_snapshot,
+                    recipe_id,
+                    RecipeVersionCreate(base_servings=2, prep_minutes=15),
+                )
+        except BaseException as exc:
+            outcomes[index] = exc
+        finally:
+            any_finished.set()
+
+    with Session(integration_engine) as lock_session:
+        _get_recipe_for_update(lock_session, member_snapshot, recipe_id)
+        workers = [
+            Thread(target=run_create_version, args=(index,), daemon=True)
+            for index in range(2)
+        ]
+        for worker in workers:
+            worker.start()
+        workers_started = all(event.wait(timeout=5) for event in started)
+        writes_blocked = workers_started and not any_finished.wait(timeout=0.5)
+        lock_session.commit()
+        for worker in workers:
+            worker.join(timeout=10)
+
+    assert workers_started
+    assert writes_blocked
+    assert all(not worker.is_alive() for worker in workers)
+    assert all(isinstance(outcome, RecipeVersion) for outcome in outcomes), outcomes
+    version_numbers = sorted(
+        outcome.version_number
+        for outcome in outcomes
+        if isinstance(outcome, RecipeVersion)
+    )
+    assert version_numbers == [2, 3]
 
 
 def test_archived_recipe_version_cannot_be_added_to_a_plan(integration_engine) -> None:

@@ -174,6 +174,8 @@ full list with safe local placeholders.
 3. For an explicit release migration, set `MIGRATE_ON_START=false` and run
    `python -m uribap_api.tools.migrate` in a one-off container; then verify
    `alembic check` reports no drift.
+   Do not run `alembic upgrade head` manually; only the migration module takes
+   the advisory lock used at startup.
 4. Rollback: redeploy the previous image. Migrations are additive-only within
    a release because the previous container remains active during the rolling
    update; if a rollback crosses a schema change, restore from the pre-release

@@ -140,7 +140,7 @@ def update_recipe(
     *,
     commit: bool = True,
 ) -> Recipe:
-    recipe = get_recipe(session, membership, recipe_id)
+    recipe = _get_recipe_for_update(session, membership, recipe_id)
     _assert_recipe_editable(recipe)
     if "name" in payload.model_fields_set and payload.name is not None:
         recipe.name = payload.name
@@ -161,7 +161,7 @@ def create_version(
     recipe_id: UUID,
     payload: RecipeVersionCreate,
 ) -> RecipeVersion:
-    recipe = get_recipe(session, membership, recipe_id)
+    recipe = _get_recipe_for_update(session, membership, recipe_id)
     _assert_recipe_editable(recipe)
     latest_number = (
         session.scalar(
@@ -443,7 +443,7 @@ def _assert_recipe_editable(recipe: Recipe) -> None:
 
 
 def archive_recipe(session: Session, membership: HouseholdMember, recipe_id: UUID) -> Recipe:
-    recipe = get_recipe(session, membership, recipe_id)
+    recipe = _get_recipe_for_update(session, membership, recipe_id)
     if recipe.archived_at is None:
         recipe.archived_at = datetime.now(UTC)
     session.commit()
@@ -452,7 +452,7 @@ def archive_recipe(session: Session, membership: HouseholdMember, recipe_id: UUI
 
 
 def unarchive_recipe(session: Session, membership: HouseholdMember, recipe_id: UUID) -> Recipe:
-    recipe = get_recipe(session, membership, recipe_id)
+    recipe = _get_recipe_for_update(session, membership, recipe_id)
     recipe.archived_at = None
     session.commit()
     session.refresh(recipe)

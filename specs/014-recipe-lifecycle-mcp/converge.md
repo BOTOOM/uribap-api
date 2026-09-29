@@ -17,3 +17,5 @@ report after the final run.
 ## Remaining work
 
 None.
+
+- Review follow-up: serialized recipe update, archive, unarchive, and version writes with recipe-row locks; added PostgreSQL regressions for archive/update ordering and distinct concurrent version numbers.
