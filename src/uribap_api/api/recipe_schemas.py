@@ -74,6 +74,21 @@ class RecipeCreate(BaseModel):
         return validate_servings(value)
 
 
+class RecipeUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("name must contain at least one non-whitespace character")
+        return normalized
+
+
 class RecipeVersionCreate(BaseModel):
     base_servings: int = Field(default=1, gt=0)
     prep_minutes: int = Field(default=0, ge=0)
@@ -97,6 +112,13 @@ class RecipeVersionIngredientLine(BaseModel):
 
 class RecipeVersionIngredientsPut(BaseModel):
     items: list[RecipeVersionIngredientUpsert] = Field(default_factory=list, max_length=100)
+
+
+class RecipeRevision(BaseModel):
+    base_servings: int | None = Field(default=None, gt=0)
+    prep_minutes: int | None = Field(default=None, ge=0)
+    items: list[RecipeVersionIngredientUpsert] | None = Field(default=None, max_length=100)
+    publish: bool = True
 
 
 class RecipeVersionDetailResponse(BaseModel):

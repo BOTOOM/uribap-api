@@ -6,8 +6,11 @@ from sqlalchemy.orm import Session
 
 from uribap_api.api.recipe_schemas import (
     RecipeCreate,
+    RecipeRevision,
+    RecipeUpdate,
     RecipeVersionCreate,
     RecipeVersionIngredientsPut,
+    RecipeVersionIngredientUpsert,
 )
 from uribap_api.domain.ingredients.policies import validate_unit_for_dimension
 from uribap_api.domain.recipes.policies import (
@@ -110,6 +113,38 @@ def get_recipe(session: Session, membership: HouseholdMember, recipe_id: UUID) -
     return recipe
 
 
+def _get_recipe_for_update(
+    session: Session, membership: HouseholdMember, recipe_id: UUID
+) -> Recipe:
+    recipe = session.scalar(
+        select(Recipe).where(Recipe.id == recipe_id).with_for_update()
+    )
+    if recipe is None or recipe.household_id != membership.household_id:
+        raise DomainError("not_found", "Recipe not found", "The recipe could not be found.", 404)
+    return recipe
+
+
+def update_recipe(
+    session: Session,
+    membership: HouseholdMember,
+    recipe_id: UUID,
+    payload: RecipeUpdate,
+) -> Recipe:
+    recipe = get_recipe(session, membership, recipe_id)
+    if recipe.archived_at is not None:
+        raise DomainError(
+            "conflict", "Recipe archived", "Archived recipes cannot be edited.", 409
+        )
+    if "name" in payload.model_fields_set and payload.name is not None:
+        recipe.name = payload.name
+        recipe.normalized_name = normalize_recipe_name(payload.name)
+    if "description" in payload.model_fields_set:
+        recipe.description = payload.description
+    session.commit()
+    session.refresh(recipe)
+    return recipe
+
+
 def create_version(
     session: Session,
     membership: HouseholdMember,
@@ -184,7 +219,18 @@ def replace_version_ingredients(
             "Only draft versions can be edited.",
             409,
         )
-    ingredient_ids = {item.ingredient_id for item in payload.items}
+    validated = _validated_lines(session, membership, payload.items)
+    _replace_lines(session, version, validated)
+    session.commit()
+    return list_version_ingredients(session, version)
+
+
+def _validated_lines(
+    session: Session,
+    membership: HouseholdMember,
+    items: list[RecipeVersionIngredientUpsert],
+) -> list[RecipeVersionIngredientUpsert]:
+    ingredient_ids = {item.ingredient_id for item in items}
     ingredients = (
         {
             row.id: row
@@ -195,7 +241,7 @@ def replace_version_ingredients(
         if ingredient_ids
         else {}
     )
-    for item in payload.items:
+    for item in items:
         ingredient = ingredients.get(item.ingredient_id)
         if (
             ingredient is None
@@ -217,6 +263,14 @@ def replace_version_ingredients(
                 f"The unit '{item.unit}' does not match the ingredient dimension.",
                 422,
             ) from exc
+    return items
+
+
+def _replace_lines(
+    session: Session,
+    version: RecipeVersion,
+    items: list[RecipeVersionIngredientUpsert],
+) -> list[RecipeVersionIngredient]:
     for line in list_version_ingredients(session, version):
         session.delete(line)
     session.flush()
@@ -229,17 +283,82 @@ def replace_version_ingredients(
             position=index,
             optional=item.optional,
         )
-        for index, item in enumerate(payload.items)
+        for index, item in enumerate(items)
     ]
     session.add_all(lines)
-    session.commit()
     return lines
 
 
-def publish_version(
-    session: Session, membership: HouseholdMember, recipe_id: UUID, version_number: int
+def revise_recipe(
+    session: Session,
+    membership: HouseholdMember,
+    recipe_id: UUID,
+    payload: RecipeRevision,
 ) -> RecipeVersion:
-    version = get_version(session, membership, recipe_id, version_number)
+    recipe = _get_recipe_for_update(session, membership, recipe_id)
+    if recipe.archived_at is not None:
+        raise DomainError(
+            "conflict", "Recipe archived", "Archived recipes cannot be revised.", 409
+        )
+    latest = session.scalar(
+        select(RecipeVersion)
+        .where(RecipeVersion.recipe_id == recipe.id)
+        .order_by(desc(RecipeVersion.version_number))
+        .limit(1)
+    )
+    if latest is None:
+        raise DomainError(
+            "not_found", "Recipe version not found", "The recipe version could not be found.", 404
+        )
+    validated_items = (
+        _validated_lines(session, membership, payload.items)
+        if payload.items is not None
+        else None
+    )
+    if latest.state == RecipeVersionState.DRAFT:
+        version = latest
+    else:
+        version = RecipeVersion(
+            recipe_id=recipe.id,
+            version_number=latest.version_number + 1,
+            base_servings=latest.base_servings,
+            prep_minutes=latest.prep_minutes,
+            state=RecipeVersionState.DRAFT,
+            created_by_user_id=membership.user_id,
+        )
+        latest_lines = list_version_ingredients(session, latest)
+        session.add(version)
+        session.flush()
+        session.add_all(
+            [
+                RecipeVersionIngredient(
+                    recipe_version_id=version.id,
+                    ingredient_id=line.ingredient_id,
+                    amount=line.amount,
+                    unit=line.unit,
+                    optional=line.optional,
+                    position=line.position,
+                )
+                for line in latest_lines
+            ]
+        )
+        session.flush()
+    if payload.base_servings is not None:
+        version.base_servings = validate_servings(payload.base_servings)
+    if payload.prep_minutes is not None:
+        version.prep_minutes = payload.prep_minutes
+    if validated_items is not None:
+        _replace_lines(session, version, validated_items)
+    if payload.publish:
+        _publish(session, membership, version)
+    session.commit()
+    session.refresh(version)
+    return version
+
+
+def _publish(
+    session: Session, membership: HouseholdMember, version: RecipeVersion
+) -> None:
     if not can_publish_version(version.state):
         raise DomainError(
             "conflict", "Recipe version conflict", "Only draft versions can be published.", 409
@@ -247,9 +366,42 @@ def publish_version(
     version.state = RecipeVersionState.PUBLISHED
     version.published_by_user_id = membership.user_id
     version.published_at = datetime.now(UTC)
+    other_published = session.scalars(
+        select(RecipeVersion).where(
+            RecipeVersion.recipe_id == version.recipe_id,
+            RecipeVersion.id != version.id,
+            RecipeVersion.state == RecipeVersionState.PUBLISHED,
+        )
+    )
+    for previous in other_published:
+        previous.state = RecipeVersionState.ARCHIVED
+
+
+def publish_version(
+    session: Session, membership: HouseholdMember, recipe_id: UUID, version_number: int
+) -> RecipeVersion:
+    version = get_version(session, membership, recipe_id, version_number)
+    _publish(session, membership, version)
     session.commit()
     session.refresh(version)
     return version
+
+
+def archive_recipe(session: Session, membership: HouseholdMember, recipe_id: UUID) -> Recipe:
+    recipe = get_recipe(session, membership, recipe_id)
+    if recipe.archived_at is None:
+        recipe.archived_at = datetime.now(UTC)
+    session.commit()
+    session.refresh(recipe)
+    return recipe
+
+
+def unarchive_recipe(session: Session, membership: HouseholdMember, recipe_id: UUID) -> Recipe:
+    recipe = get_recipe(session, membership, recipe_id)
+    recipe.archived_at = None
+    session.commit()
+    session.refresh(recipe)
+    return recipe
 
 
 def favorite_recipe(session: Session, membership: HouseholdMember, recipe_id: UUID) -> None:

@@ -25,6 +25,8 @@ bearer token). Start with uribap_get_context to learn names and ids.
 Typical flows:
 - Plan the week: uribap_get_plan → uribap_list_recipes/uribap_create_recipe →
   uribap_add_plan_entry → uribap_transition_plan(propose, approve).
+- Recipes: uribap_get_recipe → uribap_update_recipe (edit, keeps history) /
+  uribap_archive_recipe / uribap_unarchive_recipe; never create a duplicate recipe to fix one.
 - Shop: uribap_get_forecast or uribap_create_shopping_list →
   uribap_purchase_shopping_item (creates the lot) or uribap_register_purchase.
 - Cook: uribap_complete_meal deducts real stock; uribap_reopen_completion undoes it.
