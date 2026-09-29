@@ -15,9 +15,14 @@ curl -fsS http://localhost:8010/api/v1/health/live
 curl -fsS http://localhost:8010/api/v1/health/ready
 ```
 
-The API container applies Alembic migrations before starting Uvicorn in the development Compose
-stack. Production migrations MUST be reviewed and run as an explicit release step before traffic
-is switched.
+The API container applies Alembic migrations before starting Uvicorn by default, including in
+development Compose. Startup waits for PostgreSQL and serializes upgrades with a session-level
+advisory lock; a failed migration prevents the new container from serving, leaving the previous
+container healthy during a rolling update. Migrations must remain backward-compatible and additive
+within a release while old and new containers may overlap. To opt out for an explicit release step,
+set `MIGRATE_ON_START=false` and run `python -m uribap_api.tools.migrate`.
+Run that command inside the container rather than `alembic upgrade head`, because only the module
+takes the startup advisory lock.
 
 ## Resource baseline
 

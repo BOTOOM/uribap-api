@@ -736,7 +736,7 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)",
                 "type": "string"
               }
             ],
@@ -2945,6 +2945,86 @@
         "title": "RecipeResponse",
         "type": "object"
       },
+      "RecipeRevision": {
+        "properties": {
+          "base_servings": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Servings"
+          },
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RecipeVersionIngredientUpsert"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items"
+          },
+          "prep_minutes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prep Minutes"
+          },
+          "publish": {
+            "default": true,
+            "title": "Publish",
+            "type": "boolean"
+          }
+        },
+        "title": "RecipeRevision",
+        "type": "object"
+      },
+      "RecipeUpdate": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "RecipeUpdate",
+        "type": "object"
+      },
       "RecipeVersionCreate": {
         "properties": {
           "base_servings": {
@@ -3054,7 +3134,7 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)",
                 "type": "string"
               }
             ],
@@ -8016,6 +8096,210 @@
         "tags": [
           "recipes"
         ]
+      },
+      "patch": {
+        "operationId": "update_route_api_v1_recipes__recipe_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recipe_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Recipe Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Household-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Household-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipeUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Route",
+        "tags": [
+          "recipes"
+        ]
+      }
+    },
+    "/api/v1/recipes/{recipe_id}/archive": {
+      "post": {
+        "operationId": "archive_route_api_v1_recipes__recipe_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recipe_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Recipe Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Household-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Household-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Archive Route",
+        "tags": [
+          "recipes"
+        ]
       }
     },
     "/api/v1/recipes/{recipe_id}/favorite": {
@@ -8113,6 +8397,212 @@
           }
         ],
         "summary": "Favorite Route",
+        "tags": [
+          "recipes"
+        ]
+      }
+    },
+    "/api/v1/recipes/{recipe_id}/revisions": {
+      "post": {
+        "operationId": "revise_route_api_v1_recipes__recipe_id__revisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recipe_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Recipe Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Household-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Household-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipeRevision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeVersionDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revise Route",
+        "tags": [
+          "recipes"
+        ]
+      }
+    },
+    "/api/v1/recipes/{recipe_id}/unarchive": {
+      "post": {
+        "operationId": "unarchive_route_api_v1_recipes__recipe_id__unarchive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recipe_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Recipe Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Household-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Household-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unarchive Route",
         "tags": [
           "recipes"
         ]

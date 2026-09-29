@@ -15,6 +15,8 @@ from uribap_api.api.recipe_schemas import (
     RecipePage,
     RecipePublishResponse,
     RecipeResponse,
+    RecipeRevision,
+    RecipeUpdate,
     RecipeVersionCreate,
     RecipeVersionDetailResponse,
     RecipeVersionIngredientLine,
@@ -22,6 +24,7 @@ from uribap_api.api.recipe_schemas import (
 )
 from uribap_api.application.preparation_service import add_rule, delete_rule
 from uribap_api.application.recipe_service import (
+    archive_recipe,
     create_recipe,
     create_version,
     favorite_recipe,
@@ -32,7 +35,10 @@ from uribap_api.application.recipe_service import (
     list_version_ingredients,
     publish_version,
     replace_version_ingredients,
+    revise_recipe,
+    unarchive_recipe,
     unfavorite_recipe,
+    update_recipe,
 )
 from uribap_api.infrastructure.persistence.household_models import HouseholdMember
 from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
@@ -121,6 +127,80 @@ def get_route(
     session: Session = Depends(get_session),
 ) -> RecipeResponse:
     recipe = get_recipe(session, membership, recipe_id)
+    version = session.scalar(
+        select(RecipeVersion)
+        .where(RecipeVersion.recipe_id == recipe.id)
+        .order_by(desc(RecipeVersion.version_number))
+    )
+    return recipe_response(recipe, version)
+
+
+@router.patch(
+    "/{recipe_id}",
+    response_model=RecipeResponse,
+    responses=ERROR_RESPONSES,
+)
+def update_route(
+    recipe_id: UUID,
+    payload: RecipeUpdate,
+    membership: HouseholdMember = Depends(get_active_household_membership),
+    session: Session = Depends(get_session),
+) -> RecipeResponse:
+    recipe = update_recipe(session, membership, recipe_id, payload)
+    version = session.scalar(
+        select(RecipeVersion)
+        .where(RecipeVersion.recipe_id == recipe.id)
+        .order_by(desc(RecipeVersion.version_number))
+    )
+    return recipe_response(recipe, version)
+
+
+@router.post(
+    "/{recipe_id}/revisions",
+    response_model=RecipeVersionDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses=ERROR_RESPONSES,
+)
+def revise_route(
+    recipe_id: UUID,
+    payload: RecipeRevision,
+    membership: HouseholdMember = Depends(get_active_household_membership),
+    session: Session = Depends(get_session),
+) -> RecipeVersionDetailResponse:
+    version = revise_recipe(session, membership, recipe_id, payload)
+    return version_detail_response(session, version, list_version_ingredients(session, version))
+
+
+@router.post(
+    "/{recipe_id}/archive",
+    response_model=RecipeResponse,
+    responses=ERROR_RESPONSES,
+)
+def archive_route(
+    recipe_id: UUID,
+    membership: HouseholdMember = Depends(get_active_household_membership),
+    session: Session = Depends(get_session),
+) -> RecipeResponse:
+    recipe = archive_recipe(session, membership, recipe_id)
+    version = session.scalar(
+        select(RecipeVersion)
+        .where(RecipeVersion.recipe_id == recipe.id)
+        .order_by(desc(RecipeVersion.version_number))
+    )
+    return recipe_response(recipe, version)
+
+
+@router.post(
+    "/{recipe_id}/unarchive",
+    response_model=RecipeResponse,
+    responses=ERROR_RESPONSES,
+)
+def unarchive_route(
+    recipe_id: UUID,
+    membership: HouseholdMember = Depends(get_active_household_membership),
+    session: Session = Depends(get_session),
+) -> RecipeResponse:
+    recipe = unarchive_recipe(session, membership, recipe_id)
     version = session.scalar(
         select(RecipeVersion)
         .where(RecipeVersion.recipe_id == recipe.id)

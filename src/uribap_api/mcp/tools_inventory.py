@@ -1,23 +1,51 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import Field, TypeAdapter, ValidationError
 from sqlalchemy import select
 
-from uribap_api.api.inventory_schemas import InventoryAdjustment, InventoryLotCreate
-from uribap_api.application import forecast_service, inventory_service
-from uribap_api.domain.inventory.ledger import InventoryLocation, InventoryMovementType
+from uribap_api.api.inventory_schemas import (
+    InventoryAdjustment,
+    InventoryLotCreate,
+    InventoryLotQuantity,
+)
+from uribap_api.api.recipe_schemas import IngredientCreate
+from uribap_api.application import forecast_service, ingredient_service, inventory_service
+from uribap_api.domain.ingredients.policies import (
+    UNIT_DIMENSIONS,
+    validate_unit_for_dimension,
+)
+from uribap_api.domain.inventory.ledger import (
+    InventoryLedgerError,
+    InventoryLocation,
+    InventoryMovementType,
+    quantize_amount,
+)
 from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
 from uribap_api.mcp.runtime import McpRuntime
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False)
+_PURCHASE_QUANTITY = TypeAdapter(InventoryLotQuantity)
+
+
+def _validated_purchase_quantity(value: str) -> Decimal:
+    try:
+        amount = Decimal(value)
+    except (InvalidOperation, ValueError) as exc:
+        raise ToolError(f"Quantity '{value}' must be a positive decimal.") from exc
+    try:
+        quantize_amount(amount, allow_zero=False)
+        return _PURCHASE_QUANTITY.validate_python(amount)
+    except (InventoryLedgerError, ValidationError) as exc:
+        raise ToolError(f"Quantity '{value}' is invalid: {exc}") from exc
 
 
 def _lot_row(lot, ingredient_name: str | None) -> dict:
@@ -123,18 +151,21 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         annotations=WRITE.model_copy(update={"title": "Register purchase lot"}),
         description=(
             "Register a new inventory lot (what a user does when they buy food). "
-            "unit must match the ingredient base unit; location is pantry | "
-            "refrigerator | freezer."
+            "The unit must match the ingredient dimension: count→unit, mass→g|kg, "
+            "volume→ml|l. Location is pantry | refrigerator | freezer."
         ),
     )
     def register_purchase(
         ctx: Context,
-        ingredient_id: Annotated[str, Field(description="Ingredient UUID")],
         quantity: Annotated[str, Field(description="Decimal string, e.g. '500' or '2.5'")],
         unit: Annotated[str, Field(description="unit | g | kg | ml | l")],
         location: Annotated[
             InventoryLocation, Field(description="pantry | refrigerator | freezer")
         ],
+        ingredient_id: Annotated[str | None, Field(description="Ingredient UUID")] = None,
+        ingredient_name: Annotated[
+            str | None, Field(description="Exact ingredient name; creates it if missing")
+        ] = None,
         expiration_date: Annotated[
             date | None, Field(description="Optional best-before date")
         ] = None,
@@ -145,12 +176,48 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         ] = None,
     ) -> dict[str, Any]:
         def run(session, membership, _p):
+            if (ingredient_id is None) == (ingredient_name is None):
+                raise ToolError("Provide exactly one of ingredient_id or ingredient_name.")
+            amount = _validated_purchase_quantity(quantity)
+
+            auto_created = False
+            if ingredient_id is not None:
+                try:
+                    resolved_id = UUID(ingredient_id)
+                except ValueError as exc:
+                    raise ToolError(f"Invalid ingredient UUID '{ingredient_id}'.") from exc
+                ingredient = ingredient_service.get_ingredient(session, membership, resolved_id)
+            else:
+                ingredient = ingredient_service.find_by_name(
+                    session, membership, ingredient_name or ""
+                )
+                if ingredient is None:
+                    dimension = UNIT_DIMENSIONS.get(unit)
+                    if dimension is None:
+                        raise ToolError(f"Unknown unit '{unit}'.")
+                    ingredient_payload = IngredientCreate(
+                        name=ingredient_name or "",
+                        dimension=dimension,
+                        base_unit=unit,
+                    )
+                    ingredient = ingredient_service.create_ingredient(
+                        session,
+                        membership,
+                        ingredient_payload,
+                        commit=False,
+                    )
+                    auto_created = True
+                else:
+                    try:
+                        validate_unit_for_dimension(ingredient.dimension, unit)
+                    except ValueError as exc:
+                        raise ToolError(str(exc)) from exc
             lot = inventory_service.create_lot(
                 session,
                 membership,
                 InventoryLotCreate(
-                    ingredient_id=UUID(ingredient_id),
-                    quantity=Decimal(quantity),
+                    ingredient_id=ingredient.id,
+                    quantity=amount,
                     unit=unit,
                     location=location,
                     expiration_date=expiration_date,
@@ -158,8 +225,9 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                 ),
                 idempotency_key or str(uuid4()),
             )
-            ingredient = session.get(Ingredient, lot.ingredient_id)
-            return _lot_row(lot, ingredient.name if ingredient else None)
+            result = _lot_row(lot, ingredient.name)
+            result["auto_created_ingredient"] = auto_created
+            return result
 
         return rt.call(ctx, run)
 

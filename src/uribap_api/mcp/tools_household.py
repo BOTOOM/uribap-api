@@ -49,9 +49,8 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         description="List the active members of the household with their roles.",
     )
     def list_members(ctx: Context) -> dict[str, Any]:
-        return rt.call(
-            ctx,
-            lambda session, membership, _p: [
+        def run(session, membership, _p):
+            items = [
                 {
                     "user_id": str(member.user_id),
                     "role": member.role.value,
@@ -62,8 +61,10 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                 for member, user in household_service.list_members(
                     session, membership.household_id, limit=50
                 )
-            ],
-        )
+            ]
+            return {"count": len(items), "items": items}
+
+        return rt.call(ctx, run)
 
     @mcp.tool(
         name="uribap_update_household",

@@ -238,6 +238,13 @@ def _assert_published_version(
             "The recipe version is not available to this household.",
             403,
         )
+    if recipe.archived_at is not None:
+        raise DomainError(
+            "validation_error",
+            "Recipe archived",
+            "Archived recipes cannot be planned.",
+            422,
+        )
     if version.state != RecipeVersionState.PUBLISHED:
         raise DomainError(
             "validation_error",
