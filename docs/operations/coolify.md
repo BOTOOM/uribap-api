@@ -61,8 +61,14 @@ Caution: preserve the existing shared ZITADEL deployment and running routes. Pro
 3. Enable **Connect to Predefined Network** → `shared` (for Postgres), or
    use the Postgres **Public URL** (only if strictly necessary).
 4. Set the environment contract below (secret storage), then deploy.
-5. Migrations: Coolify exec → `alembic upgrade head`; verify with
-   `alembic check`. The image does not auto-migrate.
+5. Migrations run automatically before Uvicorn starts in every new API
+   container (`MIGRATE_ON_START=true` by default). Startup waits up to 60
+   seconds for PostgreSQL, then takes a session-level advisory lock before
+   upgrading to Alembic head. If the database stays unavailable or an upgrade
+   fails, the new container exits before serving; during a rolling update the
+   previous container keeps serving. Check logs for `migrations: at head <rev>`.
+   For an explicit release step, set `MIGRATE_ON_START=false` and run
+   `python -m uribap_api.tools.migrate` in a one-off container.
 6. Health check path: `/api/v1/health/live` (already in the image's
    HEALTHCHECK too).
 7. MCP endpoint for agents: `https://uribap-api.edwardiaz.dev/api/v1/mcp` — the UI's
@@ -112,8 +118,11 @@ Identity verification and recovery email text is managed at the ZITADEL organiza
 - Coolify deploys `Dockerfile` at the repository root (multi-stage Alpine,
   non-root `app`, uv-locked `uv sync --frozen --no-dev`; runtime carries
   only `/opt/venv` — no uv, no package managers).
-- The image `CMD` only starts Uvicorn; migrations are NOT applied
-  automatically on boot (that is the dev `compose.yml` behavior only).
+- The image waits for PostgreSQL, applies Alembic migrations under a
+  session-level advisory lock, and starts Uvicorn only after a successful
+  upgrade. Set `MIGRATE_ON_START=false` to opt out for an explicit release step.
+- The image healthcheck has a 60-second start period to allow the default
+  database wait and migrations to complete before health is evaluated.
 
 ## Environment contract
 
@@ -125,6 +134,7 @@ Every setting maps to an environment variable consumed by `Settings`
 | `ENVIRONMENT` | `development`/`test`/`production` | `production` — rejects localhost `DATABASE_URL` |
 | `DATABASE_URL` | SQLAlchemy URL | managed Postgres DSN; never localhost |
 | `DATABASE_POOL_SIZE` / `DATABASE_MAX_OVERFLOW` / `DATABASE_POOL_TIMEOUT_SECONDS` | pool tuning | defaults 5/5/5s |
+| `MIGRATE_ON_START` | startup migrations | defaults `true`; set `false` only for an explicit migration step |
 | `OIDC_ISSUER` / `OIDC_AUDIENCE` | token validation | ZITADEL issuer URL + API audience |
 | `OIDC_JWKS_URL` / `OIDC_JWKS_HOST` / `OIDC_ALGORITHMS` | JWKS resolution | `RS256`; host override for internal DNS |
 | `OIDC_USERINFO_URL` | optional profile enrichment | same origin as `OIDC_ISSUER`; HTTPS in production |
@@ -157,14 +167,17 @@ full list with safe local placeholders.
 ## Release procedure
 
 1. Build/push the image for the new revision.
-2. Run migrations explicitly before switching traffic:
-   `alembic upgrade head` inside a one-off container/exec, then verify
-   `alembic check` reports no drift. (The image ships the venv on PATH; `uv`
-   is build-time only.)
-3. Start the new container; gate traffic on `/api/v1/health/ready`.
+2. Deploy normally: the new container waits for PostgreSQL, acquires the
+   advisory lock, and upgrades to head before Uvicorn starts. Gate traffic on
+   `/api/v1/health/ready`; a failed migration leaves the previous container
+   serving.
+3. For an explicit release migration, set `MIGRATE_ON_START=false` and run
+   `python -m uribap_api.tools.migrate` in a one-off container; then verify
+   `alembic check` reports no drift.
 4. Rollback: redeploy the previous image. Migrations are additive-only within
-   a release; if a rollback crosses a schema change, restore from the
-   pre-release backup rather than downgrading ad hoc.
+   a release because the previous container remains active during the rolling
+   update; if a rollback crosses a schema change, restore from the pre-release
+   backup rather than downgrading ad hoc.
 
 ## Outbox dispatcher
 
