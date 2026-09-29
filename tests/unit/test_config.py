@@ -198,19 +198,29 @@ def test_derived_zitadel_invite_template_obeys_provider_length_limit() -> None:
         )
 
 
-def test_production_zitadel_api_url_requires_https() -> None:
+@pytest.mark.parametrize("issuer", ["", "http://zitadel.example.test"])
+def test_production_zitadel_api_url_allows_non_https_when_invitations_are_disabled(
+    issuer: str,
+) -> None:
+    settings = zitadel_settings(
+        environment="production",
+        database_url="postgresql+psycopg://u:p@db.example.test/uribap",
+        oidc_issuer=issuer,
+        zitadel_api_url="",
+        zitadel_service_token="",
+        zitadel_organization_id="",
+    )
+
+    assert settings.zitadel_invitations_enabled is False
+    assert settings.zitadel_api_url == issuer.rstrip("/")
+
+
+def test_production_zitadel_api_url_requires_https_when_invitations_are_enabled() -> None:
     with pytest.raises(ValueError, match="HTTPS in production"):
         zitadel_settings(
             environment="production",
             database_url="postgresql+psycopg://u:p@db.example.test/uribap",
             zitadel_api_url="http://zitadel.example.test",
-        )
-    with pytest.raises(ValueError, match="ZITADEL_API_URL"):
-        zitadel_settings(
-            environment="production",
-            database_url="postgresql+psycopg://u:p@db.example.test/uribap",
-            oidc_issuer="",
-            zitadel_api_url="",
         )
 
 

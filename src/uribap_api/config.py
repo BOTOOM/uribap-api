@@ -111,7 +111,7 @@ class Settings(BaseSettings):
                 )
             if self.environment == "production" and userinfo.scheme != "https":
                 raise ValueError("OIDC_USERINFO_URL must use HTTPS in production")
-        if self.environment == "production":
+        if self.environment == "production" and self.zitadel_invitations_enabled:
             try:
                 zitadel_url = urlsplit(self.zitadel_api_url)
                 valid_zitadel_url = (
