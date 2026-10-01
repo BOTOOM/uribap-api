@@ -36,6 +36,8 @@ def test_household_memory_migration_is_single_head_after_feature_017(
     assert diner_columns["archived_at"]["nullable"] is True
     assert diner_columns["version"]["nullable"] is False
     assert diner_columns["version"]["default"] is not None
+    assert diner_columns["created_at"]["nullable"] is False
+    assert diner_columns["updated_at"]["nullable"] is False
     diner_foreign_keys = inspector.get_foreign_keys("household_diner")
     assert any(
         key["constrained_columns"] == ["household_id"]
@@ -72,6 +74,8 @@ def test_household_memory_migration_is_single_head_after_feature_017(
     assert memory_columns["created_by_user_id"]["nullable"] is True
     assert memory_columns["version"]["nullable"] is False
     assert memory_columns["version"]["default"] is not None
+    assert memory_columns["created_at"]["nullable"] is False
+    assert memory_columns["updated_at"]["nullable"] is False
     memory_foreign_keys = inspector.get_foreign_keys("household_memory")
     assert any(
         key["constrained_columns"] == ["household_id"]
