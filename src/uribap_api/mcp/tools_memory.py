@@ -57,6 +57,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         ctx: Context,
         display_name: Annotated[str, Field(min_length=1, max_length=80)],
         member_user_id: str | None = None,
+        idempotency_key: Annotated[str | None, Field(max_length=128)] = None,
     ) -> dict[str, Any]:
         def run(session, membership, _principal):
             result = memory_service.create_diner(
@@ -70,7 +71,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                         else None
                     ),
                 ),
-                str(uuid4()),
+                idempotency_key if idempotency_key is not None else str(uuid4()),
             )
             return result.payload
 
@@ -79,16 +80,22 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
     @mcp.tool(
         name="uribap_update_diner",
         annotations=WRITE.model_copy(update={"title": "Update household diner"}),
-        description="Update a diner name or link it to a household member.",
+        description=(
+            "Update a diner name or link it to a household member. "
+            "Set unlink_member=true to explicitly remove a member link."
+        ),
     )
     def update_diner(
         ctx: Context,
         diner_id: Annotated[str, Field(description="Diner UUID")],
         display_name: Annotated[str | None, Field(min_length=1, max_length=80)] = None,
         member_user_id: str | None = None,
+        unlink_member: bool = False,
         expected_version: Annotated[int | None, Field(ge=1)] = None,
     ) -> dict[str, Any]:
         def run(session, membership, _principal):
+            if unlink_member and member_user_id is not None:
+                raise ToolError("Pass unlink_member or member_user_id, not both.")
             diner = memory_service.get_diner(session, membership, _uuid(diner_id, "diner_id"))
             changes: dict[str, Any] = {
                 "expected_version": (
@@ -97,7 +104,9 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
             }
             if display_name is not None:
                 changes["display_name"] = display_name
-            if member_user_id is not None:
+            if unlink_member:
+                changes["member_user_id"] = None
+            elif member_user_id is not None:
                 changes["member_user_id"] = _uuid(member_user_id, "member_user_id")
             updated = memory_service.update_diner(
                 session,
@@ -140,6 +149,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         kind: MemoryKind = MemoryKind.NOTE,
         diner_id: str | None = None,
         diner_name: str | None = None,
+        idempotency_key: Annotated[str | None, Field(max_length=128)] = None,
     ) -> dict[str, Any]:
         def run(session, membership, _principal):
             if diner_id is not None and diner_name is not None:
@@ -163,7 +173,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                     content=content,
                     diner_id=resolved_diner_id,
                 ),
-                str(uuid4()),
+                idempotency_key if idempotency_key is not None else str(uuid4()),
             )
             return result.payload
 

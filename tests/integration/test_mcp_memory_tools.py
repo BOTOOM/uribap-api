@@ -41,7 +41,11 @@ def memory_mcp_context(integration_engine) -> dict[str, str]:
         session.add(member)
         session.commit()
         _, token = tokens.create_token(session, member, "pytest")
-    return {"token": token, "household_id": str(household_id)}
+    return {
+        "token": token,
+        "household_id": str(household_id),
+        "user_id": str(user_id),
+    }
 
 
 def _rpc(client: TestClient, token: str, payload: dict):
@@ -101,6 +105,7 @@ def test_memory_tools_are_registered_with_required_annotations_and_descriptions(
     assert tools["uribap_get_memory"]["annotations"]["readOnlyHint"] is True
     assert all(tools[name]["annotations"]["readOnlyHint"] is False for name in expected_write_tools)
     assert CONTEXT_MEMORY_SENTENCE in tools["uribap_get_context"]["description"]
+    assert "unlink_member=true" in tools["uribap_update_diner"]["description"]
 
 
 def test_memory_tools_resolve_names_update_current_versions_and_archive(
@@ -116,13 +121,34 @@ def test_memory_tools_resolve_names_update_current_versions_and_archive(
             client,
             token,
             "uribap_add_diner",
-            {"display_name": "Mina"},
+            {"display_name": "Mina", "idempotency_key": "mcp-diner-retry"},
             3,
         )
         assert added["isError"] is False
         diner = added["structuredContent"]
         assert diner["display_name"] == "Mina"
         assert diner["version"] == 1
+
+        added_retry = _call(
+            client,
+            token,
+            "uribap_add_diner",
+            {"display_name": "Mina", "idempotency_key": "mcp-diner-retry"},
+            16,
+        )
+        assert added_retry["structuredContent"] == diner
+
+        linked_diner = _call(
+            client,
+            token,
+            "uribap_update_diner",
+            {
+                "diner_id": diner["id"],
+                "member_user_id": memory_mcp_context["user_id"],
+            },
+            17,
+        )
+        assert linked_diner["structuredContent"]["member_user_id"] == memory_mcp_context["user_id"]
 
         updated_diner = _call(
             client,
@@ -132,19 +158,77 @@ def test_memory_tools_resolve_names_update_current_versions_and_archive(
             4,
         )
         assert updated_diner["isError"] is False
-        assert updated_diner["structuredContent"]["version"] == 2
+        assert updated_diner["structuredContent"]["version"] == 3
+        assert updated_diner["structuredContent"]["member_user_id"] == memory_mcp_context["user_id"]
+
+        unlinked_diner = _call(
+            client,
+            token,
+            "uribap_update_diner",
+            {"diner_id": diner["id"], "unlink_member": True},
+            18,
+        )
+        assert unlinked_diner["isError"] is False
+        assert unlinked_diner["structuredContent"]["member_user_id"] is None
+        conflicting_unlink = _call(
+            client,
+            token,
+            "uribap_update_diner",
+            {
+                "diner_id": diner["id"],
+                "member_user_id": memory_mcp_context["user_id"],
+                "unlink_member": True,
+            },
+            19,
+        )
+        assert conflicting_unlink["isError"] is True
+
+        overlong_diner_key = _call(
+            client,
+            token,
+            "uribap_add_diner",
+            {"display_name": "Too long key", "idempotency_key": "x" * 129},
+            20,
+        )
+        assert overlong_diner_key["isError"] is True
 
         remembered = _call(
             client,
             token,
             "uribap_remember",
-            {"content": "Likes lentils", "diner_name": "mInA r"},
+            {
+                "content": "Likes lentils",
+                "diner_name": "mInA r",
+                "idempotency_key": "mcp-memory-retry",
+            },
             5,
         )
         assert remembered["isError"] is False
         memory = remembered["structuredContent"]
         assert memory["kind"] == "note"
         assert memory["diner_id"] == diner["id"]
+
+        remembered_retry = _call(
+            client,
+            token,
+            "uribap_remember",
+            {
+                "content": "Likes lentils",
+                "diner_name": "mInA r",
+                "idempotency_key": "mcp-memory-retry",
+            },
+            21,
+        )
+        assert remembered_retry["structuredContent"] == memory
+
+        overlong_memory_key = _call(
+            client,
+            token,
+            "uribap_remember",
+            {"content": "Should not be saved", "idempotency_key": "x" * 129},
+            22,
+        )
+        assert overlong_memory_key["isError"] is True
 
         remembered_by_id = _call(
             client,
@@ -209,6 +293,7 @@ def test_memory_tools_resolve_names_update_current_versions_and_archive(
         assert [item["id"] for item in profile["structuredContent"]["household"]] == [
             household_memory_id
         ]
+        assert len(profile["structuredContent"]["diners"]) == 1
         assert profile["structuredContent"]["diners"][0]["diner"]["id"] == diner["id"]
         diner_memories = {
             item["id"]: item for item in profile["structuredContent"]["diners"][0]["memories"]
@@ -217,6 +302,7 @@ def test_memory_tools_resolve_names_update_current_versions_and_archive(
         assert diner_memories[remembered_by_id["structuredContent"]["id"]]["content"] == (
             "Enjoys olives"
         )
+        assert len(diner_memories) == 2
         context_after_write = _call(client, token, "uribap_get_context", {}, 12)
         assert context_after_write["structuredContent"]["memory"] == profile["structuredContent"]
 

@@ -90,7 +90,18 @@ def test_diner_routes_cover_create_list_patch_archive_and_error_shapes(
             headers={"Idempotency-Key": f"diner-bad-link-{uuid4()}"},
         )
         assert invalid_link.status_code == 422
-        assert invalid_link.json()["code"] == "validation_error"
+        assert invalid_link.json()["code"] == "invalid_member_link"
+
+        duplicate_member_link = client.post(
+            "/api/v1/diners",
+            json={
+                "display_name": "Second linked diner",
+                "member_user_id": memory_route_context["linked_user_id"],
+            },
+            headers={"Idempotency-Key": f"diner-member-conflict-{uuid4()}"},
+        )
+        assert duplicate_member_link.status_code == 409
+        assert duplicate_member_link.json()["code"] == "invalid_member_link"
 
         listed = client.get("/api/v1/diners")
         assert listed.status_code == 200

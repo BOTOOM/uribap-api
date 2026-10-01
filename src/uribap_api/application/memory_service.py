@@ -193,7 +193,7 @@ def _validate_member_link(
     )
     if active_member_id is None:
         raise DomainError(
-            "validation_error",
+            "invalid_member_link",
             "Invalid diner member",
             "The linked user must be an active member of this household.",
             422,
@@ -206,9 +206,11 @@ def _validate_member_link(
         statement = statement.where(HouseholdDiner.id != exclude_diner_id)
     existing_diner_id = session.scalar(statement)
     if existing_diner_id is not None:
-        raise _conflict(
+        raise DomainError(
+            "invalid_member_link",
             "Diner member conflict",
             "A diner is already linked to this household member.",
+            409,
         )
 
 
@@ -240,7 +242,7 @@ def _validate_memory_diner(
 ) -> None:
     if diner_id is None:
         return
-    _get_diner(session, membership, diner_id)
+    _get_diner(session, membership, diner_id, lock=True)
 
 
 def list_diners(
@@ -329,22 +331,19 @@ def list_memories(
 
 
 def get_memory_profile(session: Session, membership: HouseholdMember) -> HouseholdMemoryProfile:
+    memories = list_memories(session, membership, scope="all", limit=None)
     household_memories = [
-        MemoryResponse.model_validate(memory)
-        for memory in list_memories(session, membership, scope="household", limit=None)
+        MemoryResponse.model_validate(memory) for memory in memories if memory.diner_id is None
     ]
+    diner_memories: dict[UUID, list[HouseholdMemory]] = {}
+    for memory in memories:
+        if memory.diner_id is not None:
+            diner_memories.setdefault(memory.diner_id, []).append(memory)
     diner_profiles = [
         DinerMemoryProfile(
             diner=DinerResponse.model_validate(diner),
             memories=[
-                MemoryResponse.model_validate(memory)
-                for memory in list_memories(
-                    session,
-                    membership,
-                    diner_id=diner.id,
-                    scope="diner",
-                    limit=None,
-                )
+                MemoryResponse.model_validate(memory) for memory in diner_memories.get(diner.id, [])
             ],
         )
         for diner in list_diners(session, membership)
@@ -366,7 +365,7 @@ def create_diner(
             "member_user_id": str(payload.member_user_id) if payload.member_user_id else None,
         },
     )
-    if idempotency_key:
+    if idempotency_key is not None:
         replay = _check_receipt(
             _find_receipt(session, membership, operation, idempotency_key), fingerprint
         )
@@ -501,7 +500,7 @@ def create_memory(
             "diner_id": str(payload.diner_id) if payload.diner_id else None,
         },
     )
-    if idempotency_key:
+    if idempotency_key is not None:
         replay = _check_receipt(
             _find_receipt(session, membership, operation, idempotency_key), fingerprint
         )

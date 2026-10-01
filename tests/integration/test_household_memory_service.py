@@ -1,8 +1,9 @@
 import json
+from threading import Event, Thread
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
 from uribap_api.api.memory_schemas import DinerCreate, DinerUpdate, MemoryCreate, MemoryUpdate
@@ -121,6 +122,7 @@ def test_diner_create_update_archive_and_active_name_reuse(integration_engine) -
                 "duplicate-member-link",
             )
         assert duplicate_link.value.status_code == 409
+        assert duplicate_link.value.code == "invalid_member_link"
 
         with pytest.raises(DomainError) as renamed_duplicate:
             memory_service.update_diner(
@@ -225,6 +227,7 @@ def test_diner_links_require_active_same_household_members_and_ids_are_scoped(
                     f"invalid-member-{invalid_member.user_id}",
                 )
             assert invalid_link.value.status_code == 422
+            assert invalid_link.value.code == "invalid_member_link"
 
         foreign_diner = memory_service.create_diner(
             session,
@@ -558,3 +561,168 @@ def test_memory_crud_scopes_profile_idempotency_and_event_privacy(
             for event in diner_events
         )
         assert foreign_household.id != household.id
+
+
+def test_memory_profile_loads_active_memories_in_one_query(integration_engine) -> None:
+    with Session(integration_engine) as session:
+        _household, member = _member(session, "Memory profile query")
+        first_diner = memory_service.create_diner(
+            session, member, DinerCreate(display_name="Zoe"), "profile-diner-zoe"
+        )
+        second_diner = memory_service.create_diner(
+            session, member, DinerCreate(display_name="Ana"), "profile-diner-ana"
+        )
+        first_diner_id = UUID(first_diner.payload["id"])
+        second_diner_id = UUID(second_diner.payload["id"])
+        memory_service.create_memory(
+            session,
+            member,
+            MemoryCreate(kind=MemoryKind.NOTE, content="House note"),
+            "profile-house-note",
+        )
+        memory_service.create_memory(
+            session,
+            member,
+            MemoryCreate(kind=MemoryKind.LIKE, content="House like"),
+            "profile-house-like",
+        )
+        memory_service.create_memory(
+            session,
+            member,
+            MemoryCreate(
+                kind=MemoryKind.RESTRICTION,
+                content="Zoe restriction",
+                diner_id=first_diner_id,
+            ),
+            "profile-zoe-restriction",
+        )
+        memory_service.create_memory(
+            session,
+            member,
+            MemoryCreate(
+                kind=MemoryKind.LIKE,
+                content="Ana like",
+                diner_id=second_diner_id,
+            ),
+            "profile-ana-like",
+        )
+        membership = HouseholdMember(
+            household_id=member.household_id,
+            user_id=member.user_id,
+            role=member.role,
+            status=member.status,
+        )
+
+    memory_queries: list[str] = []
+
+    def count_memory_query(_connection, _cursor, statement, _parameters, _context, _many) -> None:
+        normalized_statement = statement.casefold()
+        if (
+            normalized_statement.lstrip().startswith("select")
+            and "household_memory" in normalized_statement
+        ):
+            memory_queries.append(statement)
+
+    event.listen(integration_engine, "before_cursor_execute", count_memory_query)
+    try:
+        with Session(integration_engine) as session:
+            profile = memory_service.get_memory_profile(session, membership)
+    finally:
+        event.remove(integration_engine, "before_cursor_execute", count_memory_query)
+
+    assert len(memory_queries) == 1
+    assert [memory.kind for memory in profile.household] == [MemoryKind.LIKE, MemoryKind.NOTE]
+    assert [diner.diner.display_name for diner in profile.diners] == ["Ana", "Zoe"]
+    assert [memory.kind for memory in profile.diners[0].memories] == [MemoryKind.LIKE]
+    assert [memory.kind for memory in profile.diners[1].memories] == [MemoryKind.RESTRICTION]
+
+
+def test_memory_diner_validation_and_archive_wait_for_row_lock(integration_engine) -> None:
+    with Session(integration_engine) as session:
+        _household, member = _member(session, "Memory diner lock")
+        diner = memory_service.create_diner(
+            session, member, DinerCreate(display_name="Locked diner"), "locked-diner"
+        )
+        diner_id = UUID(diner.payload["id"])
+        household_memory = memory_service.create_memory(
+            session,
+            member,
+            MemoryCreate(kind=MemoryKind.NOTE, content="Move to diner"),
+            "move-memory-to-diner",
+        )
+        memory_id = UUID(household_memory.payload["id"])
+        membership = HouseholdMember(
+            household_id=member.household_id,
+            user_id=member.user_id,
+            role=member.role,
+            status=member.status,
+        )
+
+    def blocks_on_diner_lock(operation) -> bool:
+        lock_queries: list[str] = []
+
+        def capture_diner_lock(
+            _connection, _cursor, statement, _parameters, _context, _many
+        ) -> None:
+            normalized_statement = statement.casefold()
+            if "household_diner" in normalized_statement and "for update" in normalized_statement:
+                lock_queries.append(statement)
+
+        with integration_engine.connect() as lock_connection:
+            lock_connection.execute(
+                select(HouseholdDiner.id).where(HouseholdDiner.id == diner_id).with_for_update()
+            )
+            started = Event()
+            finished = Event()
+            failures: list[BaseException] = []
+
+            def run_operation() -> None:
+                started.set()
+                try:
+                    with Session(integration_engine) as worker_session:
+                        operation(worker_session)
+                except BaseException as exc:
+                    failures.append(exc)
+                finally:
+                    finished.set()
+
+            worker = Thread(target=run_operation, daemon=True)
+            event.listen(integration_engine, "before_cursor_execute", capture_diner_lock)
+            try:
+                worker.start()
+                worker_started = started.wait(timeout=5)
+                was_blocked = worker_started and not finished.wait(timeout=0.5)
+                lock_connection.commit()
+                worker.join(timeout=10)
+            finally:
+                event.remove(integration_engine, "before_cursor_execute", capture_diner_lock)
+
+        assert worker_started
+        assert not worker.is_alive()
+        assert not failures
+        assert lock_queries
+        return was_blocked
+
+    assert blocks_on_diner_lock(
+        lambda session: memory_service.create_memory(
+            session,
+            membership,
+            MemoryCreate(
+                kind=MemoryKind.NOTE,
+                content="Created while diner is active",
+                diner_id=diner_id,
+            ),
+            f"locked-create-{uuid4()}",
+        )
+    )
+    assert blocks_on_diner_lock(
+        lambda session: memory_service.update_memory(
+            session,
+            membership,
+            memory_id,
+            MemoryUpdate(expected_version=1, diner_id=diner_id),
+        )
+    )
+    assert blocks_on_diner_lock(
+        lambda session: memory_service.archive_diner(session, membership, diner_id)
+    )

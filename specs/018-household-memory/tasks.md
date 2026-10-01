@@ -144,6 +144,22 @@ convergence.
 
 ---
 
+## Phase 7: Devin Review Follow-up
+
+**Purpose**: Close the API C findings on retry-safe MCP writes, explicit unlinking, serialized diner
+validation, batched profile reads, and member-link error identity.
+
+- [x] T021 Add caller-supplied idempotency keys to `uribap_add_diner` and `uribap_remember`, with
+  replay and length validation coverage.
+- [x] T022 Add explicit diner unlinking to `uribap_update_diner`, including omitted, unlink, and
+  conflicting-input cases.
+- [x] T023 Lock diner validation during memory creation and reassignment; verify creation,
+  reassignment, and archive serialize on the same diner row.
+- [x] T024 Load the active household/diner memory profile in one query, preserve ordering, and use
+  `invalid_member_link` for inactive, foreign, and already-linked accounts without changing status
+  or detail.
+- [x] T025 Run the API C review verification and document its results in this convergence record.
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
