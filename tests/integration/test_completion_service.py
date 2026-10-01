@@ -698,6 +698,14 @@ def test_skip_records_without_inventory_and_supports_idempotent_replay(
         assert reopened.payload["state"] == "reopened"
         session.refresh(lot)
         assert lot.quantity_on_hand == Decimal("5.000000")
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(InventoryMovement)
+                .where(InventoryMovement.lot_id == lot.id)
+            )
+            == initial_movement_count
+        )
 
 
 def test_skip_rejects_invalid_plan_entry_and_existing_cooked_completion(
