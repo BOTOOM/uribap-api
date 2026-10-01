@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from uribap_api.api.forecast_schemas import DemandForecastLine, DemandForecastResponse
+from uribap_api.domain.completion.policies import MealCompletionState
 from uribap_api.domain.forecast.policies import (
     PlannedEntryDemand,
     RecipeIngredientDemand,
@@ -14,6 +15,7 @@ from uribap_api.domain.forecast.policies import (
     validate_window,
 )
 from uribap_api.domain.planning.policies import MealPlanState
+from uribap_api.infrastructure.persistence.completion_models import MealCompletion
 from uribap_api.infrastructure.persistence.household_models import HouseholdMember
 from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
 from uribap_api.infrastructure.persistence.inventory_models import InventoryLot
@@ -56,6 +58,13 @@ def demand_forecast(
                 MealPlanEntry.meal_plan_id.in_(plan_ids),
                 MealPlanEntry.planned_date >= from_date,
                 MealPlanEntry.planned_date <= to_date,
+                ~select(MealCompletion.id)
+                .where(
+                    MealCompletion.household_id == household_id,
+                    MealCompletion.meal_plan_entry_id == MealPlanEntry.id,
+                    MealCompletion.state == MealCompletionState.RECORDED,
+                )
+                .exists(),
             )
         )
     )

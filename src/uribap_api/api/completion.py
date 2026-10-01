@@ -11,6 +11,7 @@ from uribap_api.api.completion_schemas import (
     MealCompletionPage,
     MealCompletionReopen,
     MealCompletionResponse,
+    MealCompletionSkip,
 )
 from uribap_api.api.dependencies import get_active_household_membership, get_session
 from uribap_api.api.inventory_schemas import ProblemDetails
@@ -20,6 +21,7 @@ from uribap_api.application.completion_service import (
     get_completion,
     list_completions,
     reopen_completion,
+    skip_entry,
 )
 from uribap_api.domain.completion.policies import MealCompletionState
 from uribap_api.infrastructure.persistence.household_models import HouseholdMember
@@ -50,6 +52,24 @@ def complete_entry_route(
     session: Session = Depends(get_session),
 ) -> MealCompletionResponse:
     result = complete_entry(session, membership, plan_id, entry_id, payload, idempotency_key)
+    return MealCompletionResponse.model_validate(result.payload)
+
+
+@plans_router.post(
+    "/{plan_id}/entries/{entry_id}/skip",
+    response_model=MealCompletionResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses=ERROR_RESPONSES,
+)
+def skip_entry_route(
+    plan_id: UUID,
+    entry_id: UUID,
+    payload: MealCompletionSkip,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=128),
+    membership: HouseholdMember = Depends(get_active_household_membership),
+    session: Session = Depends(get_session),
+) -> MealCompletionResponse:
+    result = skip_entry(session, membership, plan_id, entry_id, payload.reason, idempotency_key)
     return MealCompletionResponse.model_validate(result.payload)
 
 

@@ -1456,6 +1456,14 @@
         "title": "MealCompletionLineResponse",
         "type": "object"
       },
+      "MealCompletionOutcome": {
+        "enum": [
+          "cooked",
+          "skipped"
+        ],
+        "title": "MealCompletionOutcome",
+        "type": "string"
+      },
       "MealCompletionPage": {
         "properties": {
           "items": {
@@ -1541,6 +1549,20 @@
                 "type": "null"
               }
             ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/MealCompletionOutcome"
+          },
+          "outcome_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Note"
           },
           "planned_date": {
             "anyOf": [
@@ -1628,6 +1650,8 @@
         "required": [
           "id",
           "state",
+          "outcome",
+          "outcome_note",
           "version",
           "meal_plan_entry_id",
           "planned_date",
@@ -1644,6 +1668,24 @@
           "updated_at"
         ],
         "title": "MealCompletionResponse",
+        "type": "object"
+      },
+      "MealCompletionSkip": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "MealCompletionSkip",
         "type": "object"
       },
       "MealCompletionState": {
@@ -1719,6 +1761,172 @@
           "servings"
         ],
         "title": "MealPlanEntryCreate",
+        "type": "object"
+      },
+      "MealPlanEntryDetailIngredientResponse": {
+        "properties": {
+          "ingredient_id": {
+            "format": "uuid",
+            "title": "Ingredient Id",
+            "type": "string"
+          },
+          "ingredient_name": {
+            "title": "Ingredient Name",
+            "type": "string"
+          },
+          "on_hand_amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "On Hand Amount",
+            "type": "string"
+          },
+          "optional": {
+            "title": "Optional",
+            "type": "boolean"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "required_amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Required Amount",
+            "type": "string"
+          },
+          "shortfall_amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Shortfall Amount",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ingredient_id",
+          "ingredient_name",
+          "required_amount",
+          "unit",
+          "optional",
+          "on_hand_amount",
+          "shortfall_amount",
+          "position"
+        ],
+        "title": "MealPlanEntryDetailIngredientResponse",
+        "type": "object"
+      },
+      "MealPlanEntryDetailResponse": {
+        "properties": {
+          "base_servings": {
+            "title": "Base Servings",
+            "type": "integer"
+          },
+          "completion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MealCompletionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "ingredients": {
+            "items": {
+              "$ref": "#/components/schemas/MealPlanEntryDetailIngredientResponse"
+            },
+            "title": "Ingredients",
+            "type": "array"
+          },
+          "meal_type": {
+            "$ref": "#/components/schemas/RecipeMealType"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "plan_id": {
+            "format": "uuid",
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "plan_state": {
+            "$ref": "#/components/schemas/MealPlanState"
+          },
+          "planned_date": {
+            "format": "date",
+            "title": "Planned Date",
+            "type": "string"
+          },
+          "prep_minutes": {
+            "title": "Prep Minutes",
+            "type": "integer"
+          },
+          "recipe_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Description"
+          },
+          "recipe_id": {
+            "format": "uuid",
+            "title": "Recipe Id",
+            "type": "string"
+          },
+          "recipe_name": {
+            "title": "Recipe Name",
+            "type": "string"
+          },
+          "recipe_version_id": {
+            "format": "uuid",
+            "title": "Recipe Version Id",
+            "type": "string"
+          },
+          "servings": {
+            "title": "Servings",
+            "type": "integer"
+          },
+          "version_number": {
+            "title": "Version Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entry_id",
+          "plan_id",
+          "plan_state",
+          "planned_date",
+          "meal_type",
+          "servings",
+          "notes",
+          "recipe_id",
+          "recipe_name",
+          "recipe_description",
+          "recipe_version_id",
+          "version_number",
+          "base_servings",
+          "prep_minutes",
+          "ingredients",
+          "completion"
+        ],
+        "title": "MealPlanEntryDetailResponse",
         "type": "object"
       },
       "MealPlanEntryResponse": {
@@ -7218,6 +7426,249 @@
           }
         ],
         "summary": "Complete Entry Route",
+        "tags": [
+          "meal-completions"
+        ]
+      }
+    },
+    "/api/v1/plans/{plan_id}/entries/{entry_id}/detail": {
+      "get": {
+        "operationId": "plan_entry_detail_route_api_v1_plans__plan_id__entries__entry_id__detail_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Entry Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Household-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Household-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MealPlanEntryDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Plan Entry Detail Route",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/v1/plans/{plan_id}/entries/{entry_id}/skip": {
+      "post": {
+        "operationId": "skip_entry_route_api_v1_plans__plan_id__entries__entry_id__skip_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Entry Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Household-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Household-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MealCompletionSkip"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MealCompletionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Skip Entry Route",
         "tags": [
           "meal-completions"
         ]

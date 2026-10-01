@@ -22,7 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from uribap_api.domain.completion.policies import MealCompletionState
+from uribap_api.domain.completion.policies import MealCompletionOutcome, MealCompletionState
 from uribap_api.infrastructure.persistence.base import Base
 
 
@@ -48,6 +48,7 @@ class MealCompletion(Base):
         ),
         Index("ix_meal_completion_completed_at", "household_id", "completed_at"),
         CheckConstraint("state IN ('recorded', 'reopened')", name="ck_meal_completion_state"),
+        CheckConstraint("outcome IN ('cooked', 'skipped')", name="ck_meal_completion_outcome"),
         CheckConstraint("version >= 1", name="ck_meal_completion_version_positive"),
         CheckConstraint(
             "state <> 'reopened' OR (reopened_by_user_id IS NOT NULL AND reopened_at IS NOT NULL)",
@@ -65,6 +66,13 @@ class MealCompletion(Base):
         nullable=False,
         default=MealCompletionState.RECORDED,
     )
+    outcome: Mapped[MealCompletionOutcome] = mapped_column(
+        Enum(MealCompletionOutcome, native_enum=False, values_callable=enum_values),
+        nullable=False,
+        default=MealCompletionOutcome.COOKED,
+        server_default=MealCompletionOutcome.COOKED.value,
+    )
+    outcome_note: Mapped[str | None] = mapped_column(Text)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     completed_by_user_id: Mapped[UUID] = mapped_column(ForeignKey("app_user.id"), nullable=False)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -1,22 +1,33 @@
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from uribap_api.api.plan_schemas import (
     MealPlanCreate,
     MealPlanEntryCreate,
+    MealPlanEntryDetailIngredientResponse,
+    MealPlanEntryDetailResponse,
     MealPlanEntryResponse,
     MealPlanEntryUpdate,
     MealPlanResponse,
     MealPlanStateEventResponse,
     MealPlanTransition,
 )
+from uribap_api.application.completion_service import get_completion as completion_response
 from uribap_api.application.event_service import record_event
 from uribap_api.application.preparation_service import reconcile_derived_tasks
+from uribap_api.domain.completion.policies import (
+    ConsumptionLine,
+    MealCompletionError,
+    MealCompletionState,
+    RecipeIngredientInput,
+    planned_lines,
+)
 from uribap_api.domain.events.policies import DomainEventKind
 from uribap_api.domain.planning.policies import (
     MealPlanAction,
@@ -32,17 +43,24 @@ from uribap_api.domain.planning.policies import (
 from uribap_api.domain.recipes.policies import RecipeVersionState
 from uribap_api.domain.shared.errors import DomainError
 from uribap_api.domain.shared.fingerprint import operation_fingerprint
+from uribap_api.infrastructure.persistence.completion_models import MealCompletion
 from uribap_api.infrastructure.persistence.household_models import (
     HouseholdMember,
     MembershipStatus,
 )
+from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
+from uribap_api.infrastructure.persistence.inventory_models import InventoryLot
 from uribap_api.infrastructure.persistence.planning_models import (
     MealPlan,
     MealPlanEntry,
     MealPlanOperation,
     MealPlanStateEvent,
 )
-from uribap_api.infrastructure.persistence.recipe_models import Recipe, RecipeVersion
+from uribap_api.infrastructure.persistence.recipe_models import (
+    Recipe,
+    RecipeVersion,
+    RecipeVersionIngredient,
+)
 
 
 @dataclass(frozen=True)
@@ -378,6 +396,150 @@ def _get_entry(
             "not_found", "Meal plan entry not found", "The plan entry could not be found.", 404
         )
     return entry
+
+
+def get_entry_detail(
+    session: Session,
+    membership: HouseholdMember,
+    plan_id: UUID,
+    entry_id: UUID,
+) -> MealPlanEntryDetailResponse:
+    plan = _get_plan(session, membership, plan_id)
+    entry = _get_entry(session, membership, plan, entry_id)
+    version = session.get(RecipeVersion, entry.recipe_version_id)
+    recipe = (
+        session.scalar(
+            select(Recipe).where(
+                Recipe.id == version.recipe_id,
+                Recipe.household_id == membership.household_id,
+            )
+        )
+        if version is not None
+        else None
+    )
+    if version is None or recipe is None:
+        raise DomainError(
+            "not_found", "Recipe not found", "The recipe for this entry could not be found.", 404
+        )
+
+    recipe_ingredients = list(
+        session.scalars(
+            select(RecipeVersionIngredient)
+            .where(RecipeVersionIngredient.recipe_version_id == version.id)
+            .order_by(
+                RecipeVersionIngredient.position,
+                RecipeVersionIngredient.ingredient_id,
+            )
+        )
+    )
+    ingredient_lines: list[tuple[ConsumptionLine, RecipeVersionIngredient]] = []
+    for row in recipe_ingredients:
+        try:
+            line = planned_lines(
+                [
+                    RecipeIngredientInput(
+                        ingredient_id=row.ingredient_id,
+                        amount=Decimal(row.amount),
+                        unit=row.unit,
+                        optional=row.optional,
+                    )
+                ],
+                entry.servings,
+                version.base_servings,
+            )[0]
+        except MealCompletionError:
+            continue
+        ingredient_lines.append((line, row))
+
+    ingredient_ids = sorted({line.ingredient_id for line, _ in ingredient_lines})
+    ingredient_names = (
+        {
+            row[0]: row[1]
+            for row in session.execute(
+                select(Ingredient.id, Ingredient.name).where(
+                    or_(
+                        Ingredient.household_id == membership.household_id,
+                        Ingredient.household_id.is_(None),
+                    ),
+                    Ingredient.id.in_(ingredient_ids),
+                )
+            ).all()
+        }
+        if ingredient_ids
+        else {}
+    )
+    if any(ingredient_id not in ingredient_names for ingredient_id in ingredient_ids):
+        raise DomainError(
+            "not_found",
+            "Ingredient not found",
+            "An ingredient for this recipe could not be found.",
+            404,
+        )
+
+    on_hand = (
+        {
+            (row[0], row[1]): Decimal(row[2])
+            for row in session.execute(
+                select(
+                    InventoryLot.ingredient_id,
+                    InventoryLot.unit,
+                    func.sum(InventoryLot.quantity_on_hand),
+                )
+                .where(
+                    InventoryLot.household_id == membership.household_id,
+                    InventoryLot.ingredient_id.in_(ingredient_ids),
+                    InventoryLot.available.is_(True),
+                )
+                .group_by(InventoryLot.ingredient_id, InventoryLot.unit)
+            ).all()
+        }
+        if ingredient_ids
+        else {}
+    )
+    completion = session.scalar(
+        select(MealCompletion).where(
+            MealCompletion.household_id == membership.household_id,
+            MealCompletion.meal_plan_entry_id == entry.id,
+            MealCompletion.state == MealCompletionState.RECORDED,
+        )
+    )
+    current_completion = (
+        completion_response(session, membership, completion.id) if completion is not None else None
+    )
+
+    ingredients = []
+    for line, source in ingredient_lines:
+        available_amount = on_hand.get((line.ingredient_id, line.unit), Decimal("0"))
+        ingredients.append(
+            MealPlanEntryDetailIngredientResponse(
+                ingredient_id=line.ingredient_id,
+                ingredient_name=ingredient_names[line.ingredient_id],
+                required_amount=line.planned_amount,
+                unit=line.unit,
+                optional=line.optional,
+                on_hand_amount=available_amount,
+                shortfall_amount=max(Decimal("0"), line.planned_amount - available_amount),
+                position=source.position,
+            )
+        )
+    return MealPlanEntryDetailResponse(
+        entry_id=entry.id,
+        plan_id=plan.id,
+        plan_state=plan.state,
+        planned_date=entry.planned_date,
+        meal_type=entry.meal_type,
+        servings=entry.servings,
+        notes=entry.notes,
+        recipe_id=recipe.id,
+        recipe_name=recipe.name,
+        recipe_description=recipe.description,
+        recipe_version_id=version.id,
+        version_number=version.version_number,
+        base_servings=version.base_servings,
+        prep_minutes=version.prep_minutes,
+        ingredients=ingredients,
+        completion=current_completion,
+    )
 
 
 def add_entry(

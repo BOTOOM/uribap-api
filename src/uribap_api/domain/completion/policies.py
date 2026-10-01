@@ -19,6 +19,11 @@ class MealCompletionState(StrEnum):
     REOPENED = "reopened"
 
 
+class MealCompletionOutcome(StrEnum):
+    COOKED = "cooked"
+    SKIPPED = "skipped"
+
+
 class MealCompletionAction(StrEnum):
     CORRECT = "correct"
     REOPEN = "reopen"
