@@ -363,8 +363,9 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         name="uribap_reopen_completion",
         annotations=WRITE.model_copy(update={"title": "Reopen meal completion"}),
         description=(
-            "Reopen a recorded completion: the consumed stock is returned to "
-            "inventory. A reason is recommended."
+            "Reopen a completion to restore forecast and shopping demand. Cooked meals return "
+            "consumed stock to inventory; skipped or delivery meals restore demand only. "
+            "A reason is recommended."
         ),
     )
     def reopen_completion(
