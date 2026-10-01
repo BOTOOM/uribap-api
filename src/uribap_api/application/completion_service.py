@@ -19,6 +19,7 @@ from uribap_api.domain.completion.policies import (
     ConsumptionLine,
     MealCompletionAction,
     MealCompletionError,
+    MealCompletionOutcome,
     MealCompletionState,
     RecipeIngredientInput,
     StockLot,
@@ -165,6 +166,8 @@ def _completion_row(session: Session, completion: MealCompletion) -> MealComplet
     return MealCompletionResponse(
         id=completion.id,
         state=completion.state,
+        outcome=completion.outcome,
+        outcome_note=completion.outcome_note,
         version=completion.version,
         meal_plan_entry_id=completion.meal_plan_entry_id,
         planned_date=entry.planned_date if entry else None,
@@ -354,6 +357,45 @@ def _reverse_line_consumption(
         )
 
 
+def _approved_entry_for_update(
+    session: Session,
+    membership: HouseholdMember,
+    plan_id: UUID,
+    entry_id: UUID,
+) -> tuple[MealPlan, MealPlanEntry]:
+    plan = session.scalar(
+        select(MealPlan)
+        .where(MealPlan.id == plan_id, MealPlan.household_id == membership.household_id)
+        .with_for_update()
+    )
+    if plan is None:
+        raise DomainError(
+            "not_found", "Meal plan not found", "The meal plan could not be found.", 404
+        )
+    if plan.state != MealPlanState.APPROVED:
+        raise DomainError(
+            "conflict",
+            "Meal plan conflict",
+            "Only approved meal plans can record completions.",
+            409,
+        )
+    entry = session.scalar(
+        select(MealPlanEntry).where(
+            MealPlanEntry.id == entry_id,
+            MealPlanEntry.meal_plan_id == plan.id,
+            MealPlanEntry.household_id == membership.household_id,
+        )
+    )
+    if entry is None:
+        raise DomainError(
+            "not_found",
+            "Meal plan entry not found",
+            "The meal plan entry could not be found.",
+            404,
+        )
+    return plan, entry
+
+
 def complete_entry(
     session: Session,
     membership: HouseholdMember,
@@ -387,36 +429,7 @@ def complete_entry(
         if replay is not None:
             return CompletionMutationResult(replay)
 
-    plan = session.scalar(
-        select(MealPlan)
-        .where(MealPlan.id == plan_id, MealPlan.household_id == membership.household_id)
-        .with_for_update()
-    )
-    if plan is None:
-        raise DomainError(
-            "not_found", "Meal plan not found", "The meal plan could not be found.", 404
-        )
-    if plan.state != MealPlanState.APPROVED:
-        raise DomainError(
-            "conflict",
-            "Meal plan conflict",
-            "Only approved meal plans can record completions.",
-            409,
-        )
-    entry = session.scalar(
-        select(MealPlanEntry).where(
-            MealPlanEntry.id == entry_id,
-            MealPlanEntry.meal_plan_id == plan.id,
-            MealPlanEntry.household_id == membership.household_id,
-        )
-    )
-    if entry is None:
-        raise DomainError(
-            "not_found",
-            "Meal plan entry not found",
-            "The meal plan entry could not be found.",
-            404,
-        )
+    _, entry = _approved_entry_for_update(session, membership, plan_id, entry_id)
     version = session.get(RecipeVersion, entry.recipe_version_id)
     if version is None:
         raise DomainError(
@@ -465,6 +478,7 @@ def complete_entry(
         household_id=membership.household_id,
         meal_plan_entry_id=entry.id,
         state=MealCompletionState.RECORDED,
+        outcome=MealCompletionOutcome.COOKED,
         version=1,
         completed_by_user_id=membership.user_id,
         completed_at=datetime.now(UTC),
@@ -496,6 +510,84 @@ def complete_entry(
             payload={
                 "meal_plan_entry_id": str(entry_id),
                 "line_count": len(lines),
+                "outcome": MealCompletionOutcome.COOKED.value,
+            },
+        )
+        result = _completion_payload(session, completion)
+        _store_receipt(session, membership, operation, idempotency_key, fingerprint, result)
+        replay = _commit_or_replay(
+            session,
+            membership,
+            operation,
+            idempotency_key,
+            fingerprint,
+            "The entry already has a recorded completion.",
+        )
+    except DomainError:
+        session.rollback()
+        raise
+    except IntegrityError as exc:
+        session.rollback()
+        raise DomainError(
+            "conflict",
+            "Meal completion conflict",
+            "The entry already has a recorded completion.",
+            409,
+        ) from exc
+    if replay is not None:
+        return CompletionMutationResult(replay)
+    return CompletionMutationResult(result)
+
+
+def skip_entry(
+    session: Session,
+    membership: HouseholdMember,
+    plan_id: UUID,
+    entry_id: UUID,
+    reason: str | None = None,
+    idempotency_key: str | None = None,
+) -> CompletionMutationResult:
+    operation = "meal_entry_skip"
+    fingerprint = operation_fingerprint(
+        operation,
+        {
+            "plan_id": str(plan_id),
+            "entry_id": str(entry_id),
+            "reason": reason,
+        },
+    )
+    if idempotency_key:
+        replay = _check_receipt(
+            _find_receipt(session, membership, operation, idempotency_key), fingerprint
+        )
+        if replay is not None:
+            return CompletionMutationResult(replay)
+
+    _, entry = _approved_entry_for_update(session, membership, plan_id, entry_id)
+    completion = MealCompletion(
+        household_id=membership.household_id,
+        meal_plan_entry_id=entry.id,
+        state=MealCompletionState.RECORDED,
+        outcome=MealCompletionOutcome.SKIPPED,
+        outcome_note=reason,
+        version=1,
+        completed_by_user_id=membership.user_id,
+        completed_at=datetime.now(UTC),
+    )
+    try:
+        session.add(completion)
+        session.flush()
+        record_event(
+            session,
+            household_id=membership.household_id,
+            kind=DomainEventKind.MEAL_COMPLETED,
+            actor_user_id=membership.user_id,
+            aggregate_type="meal_completion",
+            aggregate_id=completion.id,
+            payload={
+                "meal_plan_entry_id": str(entry_id),
+                "line_count": 0,
+                "outcome": MealCompletionOutcome.SKIPPED.value,
             },
         )
         result = _completion_payload(session, completion)

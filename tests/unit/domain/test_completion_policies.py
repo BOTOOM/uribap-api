@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 
+from uribap_api.domain.completion import policies
 from uribap_api.domain.completion.policies import (
     ActualLineInput,
     MealCompletionAction,
@@ -17,6 +18,12 @@ from uribap_api.domain.completion.policies import (
     fefo_allocate,
     planned_lines,
 )
+
+
+def test_completion_outcomes_distinguish_cooked_and_skipped() -> None:
+    outcome = policies.MealCompletionOutcome
+    assert outcome.COOKED.value == "cooked"
+    assert outcome.SKIPPED.value == "skipped"
 
 
 def _ingredient(

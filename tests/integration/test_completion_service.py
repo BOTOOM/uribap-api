@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from uribap_api.api.completion_schemas import (
@@ -15,6 +15,7 @@ from uribap_api.api.plan_schemas import (
     MealPlanEntryCreate,
     MealPlanTransition,
 )
+from uribap_api.application import completion_service
 from uribap_api.application.completion_service import (
     complete_entry,
     correct_line,
@@ -39,6 +40,7 @@ from uribap_api.domain.recipes.policies import (
     RecipeVersionState,
 )
 from uribap_api.domain.shared.errors import DomainError
+from uribap_api.infrastructure.persistence.event_models import DomainEvent
 from uribap_api.infrastructure.persistence.household_models import (
     Household,
     HouseholdMember,
@@ -231,8 +233,18 @@ def test_complete_entry_deducts_fefo(integration_engine) -> None:
         result = complete_entry(session, member, plan_id, entry_id, MealCompletionCreate(), None)
         payload = result.payload
         assert payload["state"] == "recorded"
+        assert payload["outcome"] == "cooked"
         assert payload["version"] == 1
         assert payload["recipe_name"] is not None
+        event = session.scalar(
+            select(DomainEvent).where(DomainEvent.aggregate_id == UUID(payload["id"]))
+        )
+        assert event is not None
+        assert event.payload == {
+            "meal_plan_entry_id": str(entry_id),
+            "line_count": 1,
+            "outcome": "cooked",
+        }
         assert payload["planned_date"] == str(week)
         assert len(payload["lines"]) == 1
         line = payload["lines"][0]
@@ -589,3 +601,175 @@ def test_list_filters(integration_engine) -> None:
                 now - timedelta(hours=1),
             )
         assert excinfo.value.status_code == 422
+
+
+def test_skip_records_without_inventory_and_supports_idempotent_replay(
+    integration_engine,
+) -> None:
+    week = WEEK + timedelta(weeks=int(uuid4().int % 100) + 910)
+    with Session(integration_engine) as session:
+        household, member = _member(session)
+        rice = _ingredient(session, household, "Skipped rice")
+        version = _version(session, household, member, [(rice, "0.5", "kg", False)])
+        lot = _lot(session, member, rice, "5", None)
+        plan_id, entry_id = _plan_with_entry(session, member, week, version)
+        session.commit()
+        initial_movement_count = session.scalar(
+            select(func.count())
+            .select_from(InventoryMovement)
+            .where(InventoryMovement.lot_id == lot.id)
+        )
+
+        skip_entry = completion_service.skip_entry
+        result = skip_entry(
+            session,
+            member,
+            plan_id,
+            entry_id,
+            reason="delivery",
+            idempotency_key="skip-idempotency-key",
+        )
+        assert result.payload["state"] == "recorded"
+        assert result.payload["outcome"] == "skipped"
+        assert result.payload["outcome_note"] == "delivery"
+        assert result.payload["lines"] == []
+        session.refresh(lot)
+        assert lot.quantity_on_hand == Decimal("5.000000")
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(InventoryMovement)
+                .where(InventoryMovement.lot_id == lot.id)
+            )
+            == initial_movement_count
+        )
+
+        replay = skip_entry(
+            session,
+            member,
+            plan_id,
+            entry_id,
+            reason="delivery",
+            idempotency_key="skip-idempotency-key",
+        )
+        assert replay.payload == result.payload
+        with pytest.raises(DomainError) as conflict:
+            skip_entry(
+                session,
+                member,
+                plan_id,
+                entry_id,
+                reason="ate out",
+                idempotency_key="skip-idempotency-key",
+            )
+        assert conflict.value.status_code == 409
+
+        event = session.scalar(
+            select(DomainEvent).where(DomainEvent.aggregate_id == UUID(result.payload["id"]))
+        )
+        assert event is not None
+        assert event.payload == {
+            "meal_plan_entry_id": str(entry_id),
+            "line_count": 0,
+            "outcome": "skipped",
+        }
+
+        with pytest.raises(DomainError) as correction:
+            correct_line(
+                session,
+                member,
+                UUID(result.payload["id"]),
+                uuid4(),
+                expected_version=1,
+                actual_amount=Decimal("1"),
+                unit="kg",
+                idempotency_key=None,
+            )
+        assert correction.value.status_code == 404
+
+        reopened = reopen_completion(
+            session,
+            member,
+            UUID(result.payload["id"]),
+            expected_version=1,
+            reason="plan changed",
+            idempotency_key=None,
+        )
+        assert reopened.payload["state"] == "reopened"
+        session.refresh(lot)
+        assert lot.quantity_on_hand == Decimal("5.000000")
+
+
+def test_skip_rejects_invalid_plan_entry_and_existing_cooked_completion(
+    integration_engine,
+) -> None:
+    week = WEEK + timedelta(weeks=int(uuid4().int % 100) + 1010)
+    with Session(integration_engine) as session:
+        household, member = _member(session)
+        other_household, other_member = _member(session)
+        rice = _ingredient(session, household, "Skip validation rice")
+        version = _version(session, household, member, [(rice, "0.5", "kg", False)])
+        _lot(session, member, rice, "5", None)
+        plan_id, entry_id = _plan_with_entry(session, member, week, version)
+        draft_plan_id, draft_entry_id = _plan_with_entry(
+            session,
+            member,
+            week + timedelta(weeks=1),
+            version,
+            approve=False,
+        )
+        other_rice = _ingredient(session, other_household, "Other skip rice")
+        other_version = _version(
+            session, other_household, other_member, [(other_rice, "0.5", "kg", False)]
+        )
+        other_plan_id, other_entry_id = _plan_with_entry(session, other_member, week, other_version)
+        session.commit()
+
+        skip_entry = completion_service.skip_entry
+        with pytest.raises(DomainError) as missing_plan:
+            skip_entry(session, member, uuid4(), entry_id, reason=None, idempotency_key=None)
+        assert missing_plan.value.status_code == 404
+        with pytest.raises(DomainError) as foreign_entry:
+            skip_entry(
+                session,
+                member,
+                plan_id,
+                other_entry_id,
+                reason=None,
+                idempotency_key=None,
+            )
+        assert foreign_entry.value.status_code == 404
+        with pytest.raises(DomainError) as non_approved:
+            skip_entry(
+                session,
+                member,
+                draft_plan_id,
+                draft_entry_id,
+                reason=None,
+                idempotency_key=None,
+            )
+        assert non_approved.value.status_code == 409
+        with pytest.raises(DomainError) as foreign_plan:
+            skip_entry(
+                session,
+                member,
+                other_plan_id,
+                other_entry_id,
+                reason=None,
+                idempotency_key=None,
+            )
+        assert foreign_plan.value.status_code == 404
+
+        cooked = complete_entry(session, member, plan_id, entry_id, MealCompletionCreate(), None)
+        with pytest.raises(DomainError) as already_recorded:
+            skip_entry(
+                session,
+                member,
+                plan_id,
+                entry_id,
+                reason=None,
+                idempotency_key=None,
+            )
+        assert already_recorded.value.status_code == 409
+        assert already_recorded.value.detail == "The entry already has a recorded completion."
+        assert cooked.payload["outcome"] == "cooked"

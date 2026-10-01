@@ -246,8 +246,9 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         annotations=WRITE.model_copy(update={"title": "Mark meal as cooked"}),
         description=(
             "Record a plan entry as cooked: deducts the real stock for each "
-            "ingredient. Without `lines` the recipe amounts are consumed as "
-            "planned; pass lines to record actual quantities."
+            "ingredient and removes the cooked meal from forecast and shopping "
+            "demand. Without `lines` the recipe amounts are consumed as planned; "
+            "pass lines to record actual quantities."
         ),
     )
     def complete_meal(
@@ -283,6 +284,52 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
             return result.payload
 
         return rt.call(ctx, run)
+
+    @mcp.tool(
+        name="uribap_skip_meal",
+        annotations=WRITE.model_copy(update={"title": "Mark meal as not cooked"}),
+        description=(
+            "Record that a planned meal was not cooked at home (delivery, ate out, skipped). "
+            "Removes it from forecast and shopping demand without touching inventory. "
+            "Reopen the completion to undo."
+        ),
+    )
+    def skip_meal(
+        ctx: Context,
+        plan_id: Annotated[str, Field(description="Meal plan UUID")],
+        entry_id: Annotated[str, Field(description="Plan entry UUID")],
+        reason: Annotated[str | None, Field(max_length=2000)] = None,
+        idempotency_key: Annotated[str | None, Field(max_length=128)] = None,
+    ) -> dict[str, Any]:
+        def run(session, membership, _p):
+            result = completion_service.skip_entry(
+                session,
+                membership,
+                UUID(plan_id),
+                UUID(entry_id),
+                reason,
+                idempotency_key or str(uuid4()),
+            )
+            return result.payload
+
+        return rt.call(ctx, run)
+
+    @mcp.tool(
+        name="uribap_get_plan_entry",
+        annotations=READ_ONLY.model_copy(update={"title": "Plan entry detail"}),
+        description="Read a plan entry with scaled recipe ingredients, stock, and completion.",
+    )
+    def get_plan_entry(
+        ctx: Context,
+        plan_id: Annotated[str, Field(description="Meal plan UUID")],
+        entry_id: Annotated[str, Field(description="Plan entry UUID")],
+    ) -> dict[str, Any]:
+        return rt.call(
+            ctx,
+            lambda session, membership, _p: planning_service.get_entry_detail(
+                session, membership, UUID(plan_id), UUID(entry_id)
+            ),
+        )
 
     @mcp.tool(
         name="uribap_list_completions",
