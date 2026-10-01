@@ -18,6 +18,7 @@ def queue_email(
     kind: OutboxKind,
     recipient_email: str,
     template_data: dict[str, object],
+    initial_status: OutboxStatus = OutboxStatus.PENDING,
 ) -> EmailOutboxEntry:
     existing = session.scalar(
         select(EmailOutboxEntry).where(EmailOutboxEntry.dedupe_key == dedupe_key)
@@ -29,6 +30,7 @@ def queue_email(
         kind=kind,
         recipient_email=recipient_email,
         template_data=template_data,
+        status=initial_status,
     )
     session.add(entry)
     session.flush()

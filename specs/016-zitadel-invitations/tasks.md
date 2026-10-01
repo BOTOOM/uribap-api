@@ -31,3 +31,10 @@
 - [x] T015 Document Coolify variables, ZITADEL service-account setup, ZITADEL SMTP ownership, and application SMTP fallback.
 - [x] T016 Regenerate and check `openapi/openapi.json`; confirm `uv run alembic check` detects no migration.
 - [x] T017 Run all verification commands from `plan.md`, record results in `converge.md`, then commit and push the API branch.
+
+## Review follow-up
+
+- [x] T018 Scope ZITADEL user lookup to the configured organization.
+- [x] T019 Keep invitation outbox rows non-claimable until route delivery completes.
+- [x] T020 Retry failed pending invitations without creating duplicate invitation events or ZITADEL users.
+- [x] T021 Run focused review regression tests and record the result in `converge.md`.

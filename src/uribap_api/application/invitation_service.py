@@ -25,6 +25,7 @@ from uribap_api.infrastructure.persistence.household_models import (
     HouseholdInvitation,
     HouseholdMember,
     OutboxKind,
+    OutboxStatus,
 )
 from uribap_api.infrastructure.persistence.identity_models import AppUser
 
@@ -52,16 +53,48 @@ def create_invitation(
             "conflict", "Invitation conflict", "The email is already a household member.", 409
         )
     pending = session.scalar(
-        select(HouseholdInvitation).where(
+        select(HouseholdInvitation)
+        .where(
             HouseholdInvitation.household_id == household_id,
             HouseholdInvitation.invited_email == email,
             HouseholdInvitation.status == InvitationStatus.PENDING,
         )
+        .with_for_update()
     )
     if pending is not None:
-        raise DomainError(
-            "conflict", "Invitation conflict", "A pending invitation already exists.", 409
+        outbox = session.scalar(
+            select(EmailOutboxEntry)
+            .where(EmailOutboxEntry.dedupe_key == f"household-invitation:{pending.id}")
+            .with_for_update()
         )
+        if outbox is None or outbox.status != OutboxStatus.FAILED:
+            raise DomainError(
+                "conflict", "Invitation conflict", "A pending invitation already exists.", 409
+            )
+        token = create_invitation_token()
+        now = datetime.now(UTC)
+        pending.token_hash = token.digest
+        pending.requested_role = MembershipRole(payload.role)
+        pending.expires_at = now + timedelta(hours=payload.expires_in_hours)
+        pending.version += 1
+        outbox.status = OutboxStatus.SUPPRESSED
+        outbox.available_at = now
+        outbox.sent_at = None
+        outbox.last_error = None
+        record_audit(
+            session,
+            actor_user_id=inviter.user_id,
+            household_id=household_id,
+            action="invitation.redelivered",
+            request_id=request_id,
+            target_type="invitation",
+            target_id=pending.id,
+            metadata={"role": payload.role},
+        )
+        session.commit()
+        session.refresh(pending)
+        return pending, token.raw, outbox
+
     token = create_invitation_token()
     now = datetime.now(UTC)
     invitation = HouseholdInvitation(
@@ -80,6 +113,7 @@ def create_invitation(
         kind=OutboxKind.HOUSEHOLD_INVITATION,
         recipient_email=email,
         template_data={"body": "You have been invited to join a Uribap household."},
+        initial_status=OutboxStatus.SUPPRESSED,
     )
     record_audit(
         session,
@@ -200,9 +234,7 @@ def accept_invitation_by_id(
 ) -> HouseholdMember:
     _require_verified_email(user)
     invitation = session.scalar(
-        select(HouseholdInvitation)
-        .where(HouseholdInvitation.id == invitation_id)
-        .with_for_update()
+        select(HouseholdInvitation).where(HouseholdInvitation.id == invitation_id).with_for_update()
     )
     if invitation is None or normalize_email(user.email or "") != invitation.invited_email:
         raise DomainError(

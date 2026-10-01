@@ -23,11 +23,16 @@ class ZitadelUserDirectory:
                 "query": {"limit": 1},
                 "queries": [
                     {
+                        "organizationIdQuery": {
+                            "organizationId": self._settings.zitadel_organization_id,
+                        }
+                    },
+                    {
                         "emailQuery": {
                             "emailAddress": email,
                             "method": "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE",
                         }
-                    }
+                    },
                 ],
             },
         )
@@ -43,9 +48,7 @@ class ZitadelUserDirectory:
         return user_id
 
     def create_human_user(self, email: str, display_name: str | None) -> str:
-        given_name, family_name, normalized_display_name = self._profile_names(
-            email, display_name
-        )
+        given_name, family_name, normalized_display_name = self._profile_names(email, display_name)
         profile = {"givenName": given_name, "familyName": family_name}
         if normalized_display_name is not None:
             profile["displayName"] = normalized_display_name
@@ -121,9 +124,7 @@ class ZitadelUserDirectory:
         return payload
 
     @staticmethod
-    def _profile_names(
-        email: str, display_name: str | None
-    ) -> tuple[str, str, str | None]:
+    def _profile_names(email: str, display_name: str | None) -> tuple[str, str, str | None]:
         if display_name is None or not display_name.strip():
             local_part = email.partition("@")[0]
             return local_part[:200], local_part[:200], None

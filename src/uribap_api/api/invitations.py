@@ -123,11 +123,21 @@ def create_household_invitation(
     delivery: Literal["zitadel_invite", "existing_account", "email", "failed"]
     if directory is not None:
         try:
+            created_user_id = outbox.template_data.get("zitadel_user_id")
             user_id = directory.find_user_id_by_email(invitation.invited_email)
             if user_id is None:
                 user_id = directory.create_human_user(
                     invitation.invited_email, payload.display_name
                 )
+                outbox.template_data = {
+                    **outbox.template_data,
+                    "zitadel_user_id": user_id,
+                }
+                session.commit()
+                directory.send_invite_code(user_id)
+                mark_sent(session, outbox.id)
+                delivery = "zitadel_invite"
+            elif user_id == created_user_id:
                 directory.send_invite_code(user_id)
                 mark_sent(session, outbox.id)
                 delivery = "zitadel_invite"
@@ -151,9 +161,7 @@ def create_household_invitation(
                 link=f"{settings.web_base_url.rstrip('/')}/invitations/accept?token={raw_token}",
             )
         except Exception:
-            logger.exception(
-                "identity email delivery failed", extra={"request_id": correlation_id}
-            )
+            logger.exception("identity email delivery failed", extra={"request_id": correlation_id})
             mark_failed(session, outbox.id, "smtp delivery failed")
             delivery = "failed"
         else:

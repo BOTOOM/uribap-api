@@ -73,12 +73,13 @@ def test_find_user_posts_exact_case_insensitive_query_with_bearer_auth() -> None
     assert json.loads(requests[0].content) == {
         "query": {"limit": 1},
         "queries": [
+            {"organizationIdQuery": {"organizationId": "org-123"}},
             {
                 "emailQuery": {
                     "emailAddress": "person@example.test",
                     "method": "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE",
                 }
-            }
+            },
         ],
     }
 
@@ -176,9 +177,7 @@ def test_non_success_response_does_not_expose_response_body_or_credentials() -> 
 
 def test_transport_error_does_not_expose_credentials_or_email() -> None:
     def fail(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError(
-            "synthetic-service-token person@example.test", request=request
-        )
+        raise httpx.ConnectError("synthetic-service-token person@example.test", request=request)
 
     directory, _ = directory_for(fail)
 

@@ -21,3 +21,30 @@ deployment configuration. No database migration is expected.
 
 Do not start ZITADEL, Mailpit, or full Compose. ZITADEL requests are covered with
 `httpx.MockTransport`; only the existing PostgreSQL integration setup may be used.
+
+## Review follow-up
+
+- ZITADEL user lookup now combines the exact-email filter with the configured
+  organization filter.
+- Invitation outbox rows start suppressed so only the synchronous route can deliver
+  them; failed pending invitations can be retried with a rotated token and updated role
+  and expiry.
+- The ZITADEL user ID is committed to outbox template data before invite-code delivery,
+  allowing a retry to resend the code without creating another account.
+
+## Review verification
+
+- `uv run ruff check src tests` — passed.
+- `uv run ruff format --check` on all seven changed source/test files — passed. The
+  repository-wide `uv run ruff format --check src tests` still reports 19 unchanged
+  baseline files.
+- `uv run pyright` — 0 errors, warnings, or informations.
+- Focused ZITADEL, invitation-flow, outbox, API-route, and migration tests — 36 passed;
+  two dependency deprecation warnings.
+- Alembic upgrade/downgrade/upgrade round trip — passed; `f2b8d4e6a917` is the single
+  head.
+- OpenAPI exporter `--check` — passed; no schema change required regeneration.
+- The existing `uribap` database was already at API 018 revision `6b1354a22e91`, which
+  is not present in this independent PR 150 branch's migration graph. Tests and the
+  migration round trip used a separate `uribap_review` database on the same Compose
+  PostgreSQL service to preserve the existing database.

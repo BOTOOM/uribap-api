@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from uribap_api.api.dependencies import get_current_user, get_session, get_user_directory
 from uribap_api.api.schemas import InvitationCreate
 from uribap_api.application.invitation_service import create_invitation
+from uribap_api.domain.events.policies import DomainEventKind
 from uribap_api.domain.identity.policies import (
     InvitationStatus,
     MembershipRole,
@@ -268,6 +269,141 @@ def test_zitadel_error_retains_invitation_and_records_safe_failure(
     assert "synthetic-service-token" not in str(values)
 
 
+def test_failed_invitation_can_be_retried_before_user_creation(
+    invitation_client, integration_engine
+) -> None:
+    client, household_id, _ = invitation_client
+    email = f"retry-before-create-{uuid4()}@example.test"
+    directory = StubDirectory(fail=True)
+    app.dependency_overrides[get_user_directory] = lambda: directory
+
+    first = client.post(
+        f"/api/v1/households/{household_id}/invitations",
+        json={"email": email, "role": "member", "expires_in_hours": 1},
+    )
+    assert first.status_code == 202
+    assert first.json()["delivery"] == "failed"
+    first_invitation = first.json()
+    first_outbox = get_outbox_entry(integration_engine, email)
+    first_token_hash: str
+    with Session(integration_engine) as session:
+        invitation = session.scalar(
+            select(HouseholdInvitation).where(HouseholdInvitation.invited_email == email)
+        )
+        assert invitation is not None
+        first_token_hash = invitation.token_hash
+        first_expiry = invitation.expires_at
+        first_invitation_id = invitation.id
+
+    directory.fail = False
+    retry = client.post(
+        f"/api/v1/households/{household_id}/invitations",
+        json={"email": email, "role": "admin", "expires_in_hours": 72},
+    )
+
+    assert retry.status_code == 202
+    assert retry.json()["id"] == first_invitation["id"]
+    assert retry.json()["delivery"] == "zitadel_invite"
+    assert directory.create_calls == [(email, None)]
+    assert directory.invite_calls == ["created-user-123"]
+    with Session(integration_engine) as session:
+        invitation = session.scalar(
+            select(HouseholdInvitation).where(HouseholdInvitation.invited_email == email)
+        )
+        assert invitation is not None
+        assert invitation.id == first_invitation_id
+        assert invitation.token_hash != first_token_hash
+        assert invitation.expires_at > first_expiry
+        assert invitation.requested_role == MembershipRole.ADMIN
+        outbox = session.scalar(
+            select(EmailOutboxEntry).where(EmailOutboxEntry.recipient_email == email)
+        )
+        assert outbox is not None
+        assert outbox.id == first_outbox.id
+        assert outbox.status == OutboxStatus.SENT
+        events = list(
+            session.scalars(select(DomainEvent).where(DomainEvent.aggregate_id == invitation.id))
+        )
+        assert sum(event.kind == DomainEventKind.INVITATION_CREATED.value for event in events) == 1
+        audits = list(
+            session.scalars(select(AuditEvent).where(AuditEvent.target_id == invitation.id))
+        )
+        assert {event.action for event in audits} == {
+            "invitation.created",
+            "invitation.redelivered",
+        }
+
+
+def test_failed_invitation_can_be_retried_after_user_creation(
+    invitation_client, integration_engine
+) -> None:
+    class FailFirstInviteDirectory(StubDirectory):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fail_invite = True
+            self.persisted_before_send = False
+
+        def send_invite_code(self, user_id: str) -> None:
+            with Session(integration_engine) as session:
+                entry = session.scalar(
+                    select(EmailOutboxEntry).where(EmailOutboxEntry.recipient_email == email)
+                )
+                self.persisted_before_send = (
+                    entry is not None and entry.template_data.get("zitadel_user_id") == user_id
+                )
+            super().send_invite_code(user_id)
+            if self.fail_invite:
+                raise ZitadelDirectoryError(status_code=503)
+
+    client, household_id, _ = invitation_client
+    email = f"retry-after-create-{uuid4()}@example.test"
+    directory = FailFirstInviteDirectory()
+    app.dependency_overrides[get_user_directory] = lambda: directory
+
+    first = client.post(
+        f"/api/v1/households/{household_id}/invitations",
+        json={"email": email},
+    )
+    assert first.status_code == 202
+    assert first.json()["delivery"] == "failed"
+    assert directory.persisted_before_send
+    entry = get_outbox_entry(integration_engine, email)
+    assert entry.template_data["zitadel_user_id"] == "created-user-123"
+
+    directory.user_id = "created-user-123"
+    directory.fail_invite = False
+    retry = client.post(
+        f"/api/v1/households/{household_id}/invitations",
+        json={"email": email},
+    )
+
+    assert retry.status_code == 202
+    assert retry.json()["id"] == first.json()["id"]
+    assert retry.json()["delivery"] == "zitadel_invite"
+    assert directory.find_calls == [email, email]
+    assert directory.create_calls == [(email, None)]
+    assert directory.invite_calls == ["created-user-123", "created-user-123"]
+    assert get_outbox_entry(integration_engine, email).status == OutboxStatus.SENT
+
+
+def test_non_failed_pending_invitation_cannot_be_retried(
+    invitation_client, integration_engine
+) -> None:
+    client, household_id, _ = invitation_client
+    email = f"not-retryable-{uuid4()}@example.test"
+    directory = StubDirectory("existing-user-123")
+    app.dependency_overrides[get_user_directory] = lambda: directory
+    payload = {"email": email}
+
+    first = client.post(f"/api/v1/households/{household_id}/invitations", json=payload)
+    second = client.post(f"/api/v1/households/{household_id}/invitations", json=payload)
+
+    assert first.status_code == 202
+    assert second.status_code == 409
+    assert directory.find_calls == [email]
+    assert get_outbox_entry(integration_engine, email).status == OutboxStatus.SUPPRESSED
+
+
 def test_smtp_fallback_returns_email_on_success(
     invitation_client, integration_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -515,9 +651,7 @@ def test_accept_by_id_preserves_expiry_error(invitation_client, integration_engi
     invitee_id = uuid4()
     invitee_email = f"expired-{invitee_id}@example.test"
     with Session(integration_engine) as session:
-        session.add(
-            AppUser(id=invitee_id, email=invitee_email, email_verified=True)
-        )
+        session.add(AppUser(id=invitee_id, email=invitee_email, email_verified=True))
         session.commit()
     invitation = insert_invitation(
         integration_engine,
