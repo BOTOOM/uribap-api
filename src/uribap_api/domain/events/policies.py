@@ -32,6 +32,12 @@ class DomainEventKind(StrEnum):
     MEAL_COMPLETED = "meal.completed"
     MEAL_REOPENED = "meal.reopened"
     MEAL_LINE_CORRECTED = "meal.line_corrected"
+    DINER_CREATED = "diner.created"
+    DINER_UPDATED = "diner.updated"
+    DINER_ARCHIVED = "diner.archived"
+    MEMORY_CREATED = "memory.created"
+    MEMORY_UPDATED = "memory.updated"
+    MEMORY_ARCHIVED = "memory.archived"
 
 
 class DeliveryDecision(StrEnum):
