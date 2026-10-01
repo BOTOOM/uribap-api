@@ -1,9 +1,10 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from uribap_api.api.completion_schemas import MealCompletionCreate
@@ -150,6 +151,7 @@ def _lot(
     unit: str,
     *,
     available: bool = True,
+    expiration_date: date | None = None,
 ) -> InventoryLot:
     lot = InventoryLot(
         household_id=member.household_id,
@@ -158,6 +160,7 @@ def _lot(
         unit=unit,
         location=InventoryLocation.PANTRY,
         available=available,
+        expiration_date=expiration_date,
         created_by_user_id=member.user_id,
     )
     session.add(lot)
@@ -301,3 +304,69 @@ def test_entry_detail_allows_recipe_version_without_ingredients(integration_engi
 
         assert detail.recipe_description == "Prepare a simple meal with the scaled ingredients."
         assert detail.ingredients == []
+
+
+def test_entry_detail_allocates_eligible_stock_across_duplicate_rows(integration_engine) -> None:
+    with Session(integration_engine) as session:
+        household, member = _member(session)
+        plan, entry, ingredients = _entry(session, household, member, WEEK, "Duplicate rows")
+        rice = ingredients[0]
+        session.add(
+            RecipeVersionIngredient(
+                recipe_version_id=entry.recipe_version_id,
+                ingredient_id=rice.id,
+                amount=Decimal("100"),
+                unit="g",
+                position=0,
+                optional=False,
+            )
+        )
+        _lot(session, member, rice, "150", "g", expiration_date=WEEK)
+        _lot(session, member, rice, "100", "g")
+        _lot(session, member, rice, "500", "g", available=False)
+        _lot(session, member, rice, "500", "g", expiration_date=WEEK - timedelta(days=1))
+        _lot(session, member, rice, "0", "g")
+        session.commit()
+
+        detail = planning_service.get_entry_detail(session, member, plan.id, entry.id)
+        rice_lines = [line for line in detail.ingredients if line.ingredient_id == rice.id]
+
+        assert [line.position for line in rice_lines] == [0, 2]
+        assert [line.required_amount for line in rice_lines] == [
+            Decimal("200.000000"),
+            Decimal("200.000000"),
+        ]
+        assert [line.on_hand_amount for line in rice_lines] == [
+            Decimal("250.000000"),
+            Decimal("50.000000"),
+        ]
+        assert [line.shortfall_amount for line in rice_lines] == [
+            Decimal("0.000000"),
+            Decimal("150.000000"),
+        ]
+
+
+def test_entry_detail_maps_scale_overflow_to_completion_validation_error(
+    integration_engine,
+) -> None:
+    with Session(integration_engine) as session:
+        household, member = _member(session)
+        plan, entry, _ingredients = _entry(session, household, member, WEEK, "Overflow")
+        row = session.scalar(
+            select(RecipeVersionIngredient)
+            .where(RecipeVersionIngredient.recipe_version_id == entry.recipe_version_id)
+            .order_by(RecipeVersionIngredient.position)
+        )
+        assert row is not None
+        row.amount = cast(float, Decimal("999999999999.999999"))
+        session.commit()
+
+        with pytest.raises(DomainError) as completion_error:
+            complete_entry(session, member, plan.id, entry.id, MealCompletionCreate(), None)
+        with pytest.raises(DomainError) as detail_error:
+            planning_service.get_entry_detail(session, member, plan.id, entry.id)
+
+        assert detail_error.value.status_code == completion_error.value.status_code == 422
+        assert detail_error.value.code == completion_error.value.code == "validation_error"
+        assert detail_error.value.title == completion_error.value.title == "Invalid completion"
+        assert detail_error.value.detail == completion_error.value.detail

@@ -802,17 +802,18 @@ def reopen_completion(
     completion.reopened_at = datetime.now(UTC)
     completion.reopen_reason = reason
 
-    lines = list(
-        session.scalars(
-            select(MealCompletionLine).where(
-                MealCompletionLine.meal_completion_id == completion.id,
-                MealCompletionLine.household_id == membership.household_id,
-            )
-        )
-    )
     try:
-        for line in lines:
-            _reverse_line_consumption(session, membership, line.id, operation)
+        if completion.outcome == MealCompletionOutcome.COOKED:
+            lines = list(
+                session.scalars(
+                    select(MealCompletionLine).where(
+                        MealCompletionLine.meal_completion_id == completion.id,
+                        MealCompletionLine.household_id == membership.household_id,
+                    )
+                )
+            )
+            for line in lines:
+                _reverse_line_consumption(session, membership, line.id, operation)
         record_event(
             session,
             household_id=membership.household_id,

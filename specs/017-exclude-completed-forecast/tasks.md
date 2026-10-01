@@ -181,3 +181,17 @@ US1, US2, and US3.
 - `[P]` identifies test tasks that can be authored in separate files without dependencies.
 - Use UV for all Python commands; do not start identity, full compose, or unrelated services.
 - Commit and push the existing feature branch only after the required verification succeeds.
+
+## Review follow-up
+
+- [x] T024 Inspect completion/correction/reopen receipt payloads in source and persisted PostgreSQL
+  data; confirm all are top-level `MealCompletionResponse` objects, with no nesting ambiguity.
+- [x] T025 Backfill legacy completion receipts in the outcome migration, including upgrade,
+  replay/validation, NULL-payload, and downgrade coverage.
+- [x] T026 Extract plan-entry detail calculations into a framework-independent domain function;
+  cover zero-rounded rows, scale overflow, duplicate allocation order, optional rows, and date-based
+  stock eligibility with unit tests, plus integration coverage.
+- [x] T027 Make reopen inventory behavior outcome-specific and clarify the MCP description for
+  cooked versus skipped/delivery completions.
+- [x] T028 Run the review verification, update convergence evidence and dependency rationale, then
+  commit and push the branch.

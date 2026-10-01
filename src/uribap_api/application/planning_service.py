@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -22,13 +24,15 @@ from uribap_api.application.completion_service import get_completion as completi
 from uribap_api.application.event_service import record_event
 from uribap_api.application.preparation_service import reconcile_derived_tasks
 from uribap_api.domain.completion.policies import (
-    ConsumptionLine,
     MealCompletionError,
     MealCompletionState,
-    RecipeIngredientInput,
-    planned_lines,
 )
 from uribap_api.domain.events.policies import DomainEventKind
+from uribap_api.domain.planning.entry_detail import (
+    EntryDetailStockLot,
+    RecipeIngredientRow,
+    calculate_entry_detail_ingredients,
+)
 from uribap_api.domain.planning.policies import (
     MealPlanAction,
     MealPlanningError,
@@ -45,6 +49,7 @@ from uribap_api.domain.shared.errors import DomainError
 from uribap_api.domain.shared.fingerprint import operation_fingerprint
 from uribap_api.infrastructure.persistence.completion_models import MealCompletion
 from uribap_api.infrastructure.persistence.household_models import (
+    Household,
     HouseholdMember,
     MembershipStatus,
 )
@@ -429,29 +434,64 @@ def get_entry_detail(
             .order_by(
                 RecipeVersionIngredient.position,
                 RecipeVersionIngredient.ingredient_id,
+                RecipeVersionIngredient.id,
             )
         )
     )
-    ingredient_lines: list[tuple[ConsumptionLine, RecipeVersionIngredient]] = []
-    for row in recipe_ingredients:
-        try:
-            line = planned_lines(
-                [
-                    RecipeIngredientInput(
-                        ingredient_id=row.ingredient_id,
-                        amount=Decimal(row.amount),
-                        unit=row.unit,
-                        optional=row.optional,
-                    )
-                ],
-                entry.servings,
-                version.base_servings,
-            )[0]
-        except MealCompletionError:
-            continue
-        ingredient_lines.append((line, row))
+    recipe_ingredient_ids = sorted({row.ingredient_id for row in recipe_ingredients})
+    stock_lots = (
+        list(
+            session.scalars(
+                select(InventoryLot).where(
+                    InventoryLot.household_id == membership.household_id,
+                    InventoryLot.ingredient_id.in_(recipe_ingredient_ids),
+                )
+            )
+        )
+        if recipe_ingredient_ids
+        else []
+    )
+    household = session.get(Household, membership.household_id)
+    if household is None:
+        raise DomainError(
+            "not_found",
+            "Household not found",
+            "The household could not be found.",
+            404,
+        )
+    local_today = datetime.now(UTC).astimezone(ZoneInfo(household.timezone)).date()
+    try:
+        detail_ingredients = calculate_entry_detail_ingredients(
+            [
+                RecipeIngredientRow(
+                    row_id=row.id,
+                    ingredient_id=row.ingredient_id,
+                    amount=Decimal(row.amount),
+                    unit=row.unit,
+                    optional=row.optional,
+                    position=row.position,
+                )
+                for row in recipe_ingredients
+            ],
+            [
+                EntryDetailStockLot(
+                    ingredient_id=lot.ingredient_id,
+                    quantity_on_hand=Decimal(lot.quantity_on_hand),
+                    unit=lot.unit,
+                    available=lot.available,
+                    expiration_date=lot.expiration_date,
+                )
+                for lot in stock_lots
+            ],
+            servings=entry.servings,
+            base_servings=version.base_servings,
+            planned_date=entry.planned_date,
+            local_today=local_today,
+        )
+    except MealCompletionError as exc:
+        raise DomainError("validation_error", "Invalid completion", str(exc), 422) from exc
 
-    ingredient_ids = sorted({line.ingredient_id for line, _ in ingredient_lines})
+    ingredient_ids = sorted({line.ingredient_id for line in detail_ingredients})
     ingredient_names = (
         {
             row[0]: row[1]
@@ -476,26 +516,6 @@ def get_entry_detail(
             404,
         )
 
-    on_hand = (
-        {
-            (row[0], row[1]): Decimal(row[2])
-            for row in session.execute(
-                select(
-                    InventoryLot.ingredient_id,
-                    InventoryLot.unit,
-                    func.sum(InventoryLot.quantity_on_hand),
-                )
-                .where(
-                    InventoryLot.household_id == membership.household_id,
-                    InventoryLot.ingredient_id.in_(ingredient_ids),
-                    InventoryLot.available.is_(True),
-                )
-                .group_by(InventoryLot.ingredient_id, InventoryLot.unit)
-            ).all()
-        }
-        if ingredient_ids
-        else {}
-    )
     completion = session.scalar(
         select(MealCompletion).where(
             MealCompletion.household_id == membership.household_id,
@@ -507,21 +527,19 @@ def get_entry_detail(
         completion_response(session, membership, completion.id) if completion is not None else None
     )
 
-    ingredients = []
-    for line, source in ingredient_lines:
-        available_amount = on_hand.get((line.ingredient_id, line.unit), Decimal("0"))
-        ingredients.append(
-            MealPlanEntryDetailIngredientResponse(
-                ingredient_id=line.ingredient_id,
-                ingredient_name=ingredient_names[line.ingredient_id],
-                required_amount=line.planned_amount,
-                unit=line.unit,
-                optional=line.optional,
-                on_hand_amount=available_amount,
-                shortfall_amount=max(Decimal("0"), line.planned_amount - available_amount),
-                position=source.position,
-            )
+    ingredients = [
+        MealPlanEntryDetailIngredientResponse(
+            ingredient_id=line.ingredient_id,
+            ingredient_name=ingredient_names[line.ingredient_id],
+            required_amount=line.required_amount,
+            unit=line.unit,
+            optional=line.optional,
+            on_hand_amount=line.on_hand_amount,
+            shortfall_amount=line.shortfall_amount,
+            position=line.position,
         )
+        for line in detail_ingredients
+    ]
     return MealPlanEntryDetailResponse(
         entry_id=entry.id,
         plan_id=plan.id,

@@ -32,9 +32,31 @@ def upgrade() -> None:
         "meal_completion",
         "outcome IN ('cooked', 'skipped')",
     )
+    op.execute(
+        sa.text(
+            """
+            UPDATE completion_operation
+            SET result_payload = result_payload
+                || jsonb_build_object('outcome', 'cooked', 'outcome_note', NULL)
+            WHERE result_payload IS NOT NULL
+                AND jsonb_typeof(result_payload) = 'object'
+                AND result_payload -> 'outcome' IS NULL
+            """
+        )
+    )
 
 
 def downgrade() -> None:
+    op.execute(
+        sa.text(
+            """
+            UPDATE completion_operation
+            SET result_payload = result_payload - 'outcome' - 'outcome_note'
+            WHERE result_payload IS NOT NULL
+                AND jsonb_typeof(result_payload) = 'object'
+            """
+        )
+    )
     op.drop_constraint("ck_meal_completion_outcome", "meal_completion", type_="check")
     op.drop_column("meal_completion", "outcome_note")
     op.drop_column("meal_completion", "outcome")

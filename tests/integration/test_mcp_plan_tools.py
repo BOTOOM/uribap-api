@@ -178,7 +178,7 @@ def _call(
     return response.json()["result"]
 
 
-def test_plan_tool_list_exposes_skip_and_entry_detail_metadata(
+def test_plan_tool_list_exposes_skip_detail_and_reopen_metadata(
     plan_entry_context: dict[str, str],
 ) -> None:
     with TestClient(app) as client:
@@ -199,6 +199,10 @@ def test_plan_tool_list_exposes_skip_and_entry_detail_metadata(
     assert "uribap_complete_meal" in tools_by_name
     assert "forecast" in tools_by_name["uribap_complete_meal"]["description"].lower()
     assert "shopping demand" in tools_by_name["uribap_complete_meal"]["description"].lower()
+    reopen = tools_by_name["uribap_reopen_completion"]["description"].lower()
+    assert "cooked" in reopen
+    assert "skipped" in reopen
+    assert "demand" in reopen
 
 
 def test_mcp_skip_meal_records_skipped_outcome_without_inventory(

@@ -70,8 +70,8 @@ reopened completions naturally remain eligible. Shopping generation inherits the
   `complete_entry` plan/entry/tenant validation and its receipt/fingerprint flow with operation
   `meal_entry_skip`. Persist a `RECORDED`/`SKIPPED` completion and reason with zero lines and zero
   inventory movements. Record the specified `MEAL_COMPLETED` payload; cooked events also gain
-  `outcome: "cooked"`. Reopen keeps its existing transition and reversal logic, which is a no-op
-  when no lines exist.
+  `outcome: "cooked"`. Reopening a cooked completion reverses its inventory movements; reopening a
+  skipped completion restores demand without inventory effects.
 - Add `POST /{plan_id}/entries/{entry_id}/skip` to the existing plan-completion router in
   `src/uribap_api/api/completion.py`, returning `201` and the updated response.
 
@@ -82,9 +82,12 @@ reopened completions naturally remain eligible. Shopping generation inherits the
 - Implement `get_entry_detail(session, membership, plan_id, entry_id)` in
   `src/uribap_api/application/planning_service.py`, scoping plan and entry to the membership's
   household and returning `404` on a foreign or absent resource.
-- Reuse `planned_lines` from `domain/completion/policies.py` for scaled ingredient amounts;
-  do not create a second scaling formula. Sum available same-household, same-ingredient, same-unit
-  inventory lots, then derive nonnegative shortfalls. Order lines by recipe position then id.
+- Extract detail-line scaling and stock allocation into a framework-independent domain function.
+  Reuse the completion scaling rules; omit zero-rounded rows and propagate scaling range errors as
+  the completion validation `422`. Allocate remaining same-household stock to duplicate
+  ingredient/unit rows in `(position, ingredient_id)` order: report remaining stock before each row,
+  calculate shortfall from that balance, and consume up to the row's required amount. Use only
+  available positive lots whose expiry is on or after `max(household-local today, planned date)`.
   Include the recipe's description and current recorded completion only.
 - Add `GET /{plan_id}/entries/{entry_id}/detail` to `src/uribap_api/api/plans.py`.
 - Register `uribap_skip_meal` (WRITE, title `Mark meal as not cooked`) in
