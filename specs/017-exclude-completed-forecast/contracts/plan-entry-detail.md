@@ -22,8 +22,12 @@ requested plan.
   recorded completion
 
 Amounts use the completion domain's `planned_lines` scaling for entry servings versus recipe
-version base servings. On-hand quantities sum available inventory lots matching household,
-ingredient, and unit. Shortfall is `max(0, required_amount - on_hand_amount)`. The recipe
+version base servings. On-hand quantities start from the sum of available, positive inventory
+lots matching household, ingredient, and unit that are not expired on
+`max(local_today, planned_date)`. Lines sharing an ingredient and unit draw from that stock in
+recipe order (position, ingredient id, row id): each line's `on_hand_amount` is what remains after
+earlier lines took `min(required_amount, remaining)`, so the same stock is never counted twice.
+Shortfall is `max(0, required_amount - on_hand_amount)`. The recipe
 description is returned as preparation copy; this endpoint does not mutate plan, completion, or
 inventory state.
 
