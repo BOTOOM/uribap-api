@@ -154,6 +154,17 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         def run(session, membership, _principal):
             if diner_id is not None and diner_name is not None:
                 raise ToolError("Pass diner_id or diner_name, not both.")
+            requested_payload = MemoryCreate(kind=kind, content=content)
+            if diner_name is not None and idempotency_key is not None:
+                replay = memory_service.replay_memory_create_by_name(
+                    session,
+                    membership,
+                    requested_payload,
+                    diner_name,
+                    idempotency_key,
+                )
+                if replay is not None:
+                    return replay.payload
             resolved_diner_id = None
             if diner_id is not None:
                 resolved_diner_id = _uuid(diner_id, "diner_id")
@@ -174,6 +185,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                     diner_id=resolved_diner_id,
                 ),
                 idempotency_key if idempotency_key is not None else str(uuid4()),
+                requested_diner_name=diner_name,
             )
             return result.payload
 

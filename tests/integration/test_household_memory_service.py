@@ -260,6 +260,48 @@ def test_diner_links_require_active_same_household_members_and_ids_are_scoped(
         assert foreign_household.id != household.id
 
 
+def test_member_link_unique_constraint_races_return_invalid_member_link(
+    integration_engine, monkeypatch
+) -> None:
+    with Session(integration_engine) as session:
+        _household, member = _member(session, "Diner member-link race")
+        linked = memory_service.create_diner(
+            session,
+            member,
+            DinerCreate(display_name="Already linked", member_user_id=member.user_id),
+            "member-link-race-existing",
+        )
+        unlinked = memory_service.create_diner(
+            session, member, DinerCreate(display_name="To link"), "member-link-race-unlinked"
+        )
+        monkeypatch.setattr(
+            memory_service,
+            "_validate_member_link",
+            lambda *_args, **_kwargs: None,
+        )
+
+        with pytest.raises(DomainError) as create_conflict:
+            memory_service.create_diner(
+                session,
+                member,
+                DinerCreate(display_name="Create race", member_user_id=member.user_id),
+                None,
+            )
+        assert create_conflict.value.code == "invalid_member_link"
+        assert create_conflict.value.status_code == 409
+
+        with pytest.raises(DomainError) as update_conflict:
+            memory_service.update_diner(
+                session,
+                member,
+                UUID(unlinked.payload["id"]),
+                DinerUpdate(expected_version=1, member_user_id=member.user_id),
+            )
+        assert update_conflict.value.code == "invalid_member_link"
+        assert update_conflict.value.status_code == 409
+        assert linked.payload["member_user_id"] == str(member.user_id)
+
+
 def test_diner_create_idempotency_replay_records_one_private_event(
     integration_engine, caplog
 ) -> None:

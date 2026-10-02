@@ -325,3 +325,92 @@ def test_memory_tools_resolve_names_update_current_versions_and_archive(
         assert archived_diner["isError"] is False
         profile_after_archive = _call(client, token, "uribap_get_memory", {}, 15)
         assert profile_after_archive["structuredContent"]["diners"] == []
+
+
+def test_remember_by_name_idempotency_replays_after_rename_and_name_reuse(
+    memory_mcp_context: dict[str, str],
+) -> None:
+    token = memory_mcp_context["token"]
+    with TestClient(app) as client:
+        created_diner = _call(
+            client,
+            token,
+            "uribap_add_diner",
+            {"display_name": "Mina", "idempotency_key": "mina-original"},
+            30,
+        )["structuredContent"]
+        original_memory = _call(
+            client,
+            token,
+            "uribap_remember",
+            {
+                "content": "Likes lentils",
+                "diner_name": "Mina",
+                "idempotency_key": "k1",
+            },
+            31,
+        )["structuredContent"]
+
+        renamed = _call(
+            client,
+            token,
+            "uribap_update_diner",
+            {"diner_id": created_diner["id"], "display_name": "Marina"},
+            32,
+        )
+        assert renamed["isError"] is False
+
+        after_rename = _call(
+            client,
+            token,
+            "uribap_remember",
+            {
+                "content": "Likes lentils",
+                "diner_name": "Mina",
+                "idempotency_key": "k1",
+            },
+            33,
+        )
+        assert after_rename["structuredContent"] == original_memory
+
+        replacement_diner = _call(
+            client,
+            token,
+            "uribap_add_diner",
+            {"display_name": "Mina", "idempotency_key": "mina-replacement"},
+            34,
+        )
+        assert replacement_diner["isError"] is False
+
+        after_name_reuse = _call(
+            client,
+            token,
+            "uribap_remember",
+            {
+                "content": "Likes lentils",
+                "diner_name": "  mINA  ",
+                "idempotency_key": "k1",
+            },
+            35,
+        )
+        assert after_name_reuse["structuredContent"] == original_memory
+
+        content_conflict = _call(
+            client,
+            token,
+            "uribap_remember",
+            {
+                "content": "Prefers pasta",
+                "diner_name": "Mina",
+                "idempotency_key": "k1",
+            },
+            36,
+        )
+        assert content_conflict["isError"] is True
+        assert "idempotency" in _error_text(content_conflict).casefold()
+
+        profile = _call(client, token, "uribap_get_memory", {}, 37)["structuredContent"]
+        memories = [
+            memory for diner_profile in profile["diners"] for memory in diner_profile["memories"]
+        ]
+        assert [memory["id"] for memory in memories] == [original_memory["id"]]

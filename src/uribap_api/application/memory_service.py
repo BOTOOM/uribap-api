@@ -47,6 +47,20 @@ def _conflict(title: str, detail: str) -> DomainError:
     return DomainError("conflict", title, detail, 409)
 
 
+def _is_member_link_unique_violation(exc: IntegrityError) -> bool:
+    diagnostic = getattr(exc.orig, "diag", None)
+    return getattr(diagnostic, "constraint_name", None) == "uq_household_diner_member"
+
+
+def _diner_member_link_conflict() -> DomainError:
+    return DomainError(
+        "invalid_member_link",
+        "Diner member conflict",
+        "A diner is already linked to this household member.",
+        409,
+    )
+
+
 def _find_receipt(
     session: Session,
     membership: HouseholdMember,
@@ -398,6 +412,15 @@ def create_diner(
         _store_receipt(session, membership, operation, idempotency_key, fingerprint, result)
         session.commit()
     except IntegrityError as exc:
+        if _is_member_link_unique_violation(exc):
+            session.rollback()
+            if idempotency_key is not None:
+                replay = _check_receipt(
+                    _find_receipt(session, membership, operation, idempotency_key), fingerprint
+                )
+                if replay is not None:
+                    return MemoryMutationResult(replay)
+            raise _diner_member_link_conflict() from exc
         replay = _replay_or_conflict(
             session,
             membership,
@@ -460,6 +483,8 @@ def update_diner(
         session.commit()
     except IntegrityError as exc:
         session.rollback()
+        if _is_member_link_unique_violation(exc):
+            raise _diner_member_link_conflict() from exc
         raise _conflict(
             "Diner update conflict",
             "The diner conflicts with an existing household diner.",
@@ -485,21 +510,50 @@ def archive_diner(session: Session, membership: HouseholdMember, diner_id: UUID)
     session.commit()
 
 
+def _memory_create_fingerprint(
+    payload: MemoryCreate, *, requested_diner_name: str | None = None
+) -> str:
+    if requested_diner_name is None:
+        request = {
+            "kind": payload.kind.value,
+            "content": payload.content,
+            "diner_id": str(payload.diner_id) if payload.diner_id else None,
+        }
+    else:
+        request = {
+            "kind": payload.kind.value,
+            "content": payload.content,
+            "diner_name": " ".join(requested_diner_name.split()).casefold(),
+            "by": "name",
+        }
+    return operation_fingerprint("household_memory_create", request)
+
+
+def replay_memory_create_by_name(
+    session: Session,
+    membership: HouseholdMember,
+    payload: MemoryCreate,
+    diner_name: str,
+    idempotency_key: str,
+) -> MemoryMutationResult | None:
+    fingerprint = _memory_create_fingerprint(payload, requested_diner_name=diner_name)
+    replay = _check_receipt(
+        _find_receipt(session, membership, "household_memory_create", idempotency_key),
+        fingerprint,
+    )
+    return MemoryMutationResult(replay) if replay is not None else None
+
+
 def create_memory(
     session: Session,
     membership: HouseholdMember,
     payload: MemoryCreate,
     idempotency_key: str | None,
+    *,
+    requested_diner_name: str | None = None,
 ) -> MemoryMutationResult:
     operation = "household_memory_create"
-    fingerprint = operation_fingerprint(
-        operation,
-        {
-            "kind": payload.kind.value,
-            "content": payload.content,
-            "diner_id": str(payload.diner_id) if payload.diner_id else None,
-        },
-    )
+    fingerprint = _memory_create_fingerprint(payload, requested_diner_name=requested_diner_name)
     if idempotency_key is not None:
         replay = _check_receipt(
             _find_receipt(session, membership, operation, idempotency_key), fingerprint
