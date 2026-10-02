@@ -6,9 +6,11 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     JSON,
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -110,6 +112,67 @@ class HouseholdMember(Base):
 
     household: Mapped[Household] = relationship(back_populates="members")
     user: Mapped[AppUser] = relationship(back_populates="memberships")
+
+
+class HouseholdDiner(Base):
+    __tablename__ = "household_diner"
+    __table_args__ = (
+        UniqueConstraint("household_id", "member_user_id", name="uq_household_diner_member"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(
+        ForeignKey("household.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    display_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    member_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+Index(
+    "uq_household_diner_active_name",
+    HouseholdDiner.household_id,
+    func.lower(HouseholdDiner.display_name),
+    unique=True,
+    postgresql_where=HouseholdDiner.archived_at.is_(None),
+)
+
+
+class HouseholdMemory(Base):
+    __tablename__ = "household_memory"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('like', 'dislike', 'restriction', 'goal', 'note')",
+            name="ck_household_memory_kind",
+        ),
+        Index("ix_household_memory_scope", "household_id", "diner_id", "archived_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[UUID] = mapped_column(
+        ForeignKey("household.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    diner_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("household_diner.id", ondelete="CASCADE")
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class HouseholdInvitation(Base):

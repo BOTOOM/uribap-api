@@ -7,7 +7,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from uribap_api.api.schemas import HouseholdUpdate
-from uribap_api.application import event_service, household_service
+from uribap_api.application import event_service, household_service, memory_service
 from uribap_api.infrastructure.persistence.identity_models import AppUser
 from uribap_api.mcp.runtime import McpRuntime
 
@@ -21,7 +21,8 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         annotations=READ_ONLY.model_copy(update={"title": "Who am I"}),
         description=(
             "Return the authenticated user, household and role behind this MCP token. "
-            "Call this first to learn household_id and confirm access."
+            "Call this first to learn household_id and confirm access. Includes the household "
+            "memory (diners' likes, dislikes, restrictions, goals and household notes)."
         ),
     )
     def get_context(ctx: Context) -> dict[str, Any]:
@@ -39,6 +40,9 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                     "timezone": household.timezone,
                     "version": household.version,
                 },
+                "memory": memory_service.get_memory_profile(session, membership).model_dump(
+                    mode="json"
+                ),
             }
 
         return rt.call(ctx, run)

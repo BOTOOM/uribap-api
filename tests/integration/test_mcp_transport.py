@@ -45,12 +45,8 @@ def mcp_token(integration_engine) -> str:
     user_id = uuid4()
     household_id = uuid4()
     with Session(integration_engine) as session:
-        session.add(
-            AppUser(id=user_id, email=f"{user_id}@example.test", email_verified=True)
-        )
-        session.add(
-            Household(id=household_id, name="MCP", locale="es", timezone="UTC")
-        )
+        session.add(AppUser(id=user_id, email=f"{user_id}@example.test", email_verified=True))
+        session.add(Household(id=household_id, name="MCP", locale="es", timezone="UTC"))
         member = HouseholdMember(
             household_id=household_id,
             user_id=user_id,
@@ -101,6 +97,15 @@ def test_mcp_initialize_and_tool_call_with_valid_token(mcp_token: str) -> None:
         assert "uribap_add_plan_entry" in names
         assert "uribap_skip_meal" in names
         assert "uribap_get_plan_entry" in names
+        assert {
+            "uribap_get_memory",
+            "uribap_add_diner",
+            "uribap_update_diner",
+            "uribap_archive_diner",
+            "uribap_remember",
+            "uribap_update_memory",
+            "uribap_forget_memory",
+        }.issubset(names)
 
         call = _rpc(
             client,

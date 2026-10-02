@@ -10,6 +10,7 @@ from uribap_api.api.ingredients import router as ingredients_router
 from uribap_api.api.inventory import router as inventory_router
 from uribap_api.api.invitations import router as invitations_router
 from uribap_api.api.mcp_tokens import router as mcp_tokens_router
+from uribap_api.api.memory import router as memory_router
 from uribap_api.api.plans import router as plans_router
 from uribap_api.api.preparation import router as preparation_router
 from uribap_api.api.recipes import router as recipes_router
@@ -30,3 +31,4 @@ api_router.include_router(preparation_router)
 api_router.include_router(completion_plans_router)
 api_router.include_router(completion_router)
 api_router.include_router(mcp_tokens_router)
+api_router.include_router(memory_router)
