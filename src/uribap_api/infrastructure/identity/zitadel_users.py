@@ -23,16 +23,22 @@ class ZitadelUserDirectory:
                 "query": {"limit": 1},
                 "queries": [
                     {
-                        "organizationIdQuery": {
-                            "organizationId": self._settings.zitadel_organization_id,
+                        "andQuery": {
+                            "queries": [
+                                {
+                                    "organizationIdQuery": {
+                                        "organizationId": self._settings.zitadel_organization_id,
+                                    }
+                                },
+                                {
+                                    "emailQuery": {
+                                        "emailAddress": email,
+                                        "method": "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE",
+                                    }
+                                },
+                            ]
                         }
-                    },
-                    {
-                        "emailQuery": {
-                            "emailAddress": email,
-                            "method": "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE",
-                        }
-                    },
+                    }
                 ],
             },
         )

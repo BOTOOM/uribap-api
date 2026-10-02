@@ -73,11 +73,17 @@ def test_find_user_posts_exact_case_insensitive_query_with_bearer_auth() -> None
     assert json.loads(requests[0].content) == {
         "query": {"limit": 1},
         "queries": [
-            {"organizationIdQuery": {"organizationId": "org-123"}},
             {
-                "emailQuery": {
-                    "emailAddress": "person@example.test",
-                    "method": "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE",
+                "andQuery": {
+                    "queries": [
+                        {"organizationIdQuery": {"organizationId": "org-123"}},
+                        {
+                            "emailQuery": {
+                                "emailAddress": "person@example.test",
+                                "method": "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE",
+                            }
+                        },
+                    ]
                 }
             },
         ],
