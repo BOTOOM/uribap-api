@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID
 
+import psycopg
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -48,8 +49,10 @@ def _conflict(title: str, detail: str) -> DomainError:
 
 
 def _is_member_link_unique_violation(exc: IntegrityError) -> bool:
-    diagnostic = getattr(exc.orig, "diag", None)
-    return getattr(diagnostic, "constraint_name", None) == "uq_household_diner_member"
+    return (
+        isinstance(exc.orig, psycopg.errors.UniqueViolation)
+        and exc.orig.diag.constraint_name == "uq_household_diner_member"
+    )
 
 
 def _diner_member_link_conflict() -> DomainError:
