@@ -99,6 +99,8 @@ def test_mcp_initialize_and_tool_call_with_valid_token(mcp_token: str) -> None:
         assert "uribap_get_context" in names
         assert "uribap_get_inventory" in names
         assert "uribap_add_plan_entry" in names
+        assert "uribap_skip_meal" in names
+        assert "uribap_get_plan_entry" in names
 
         call = _rpc(
             client,

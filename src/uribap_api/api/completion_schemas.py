@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from uribap_api.domain.completion.policies import MealCompletionState
+from uribap_api.domain.completion.policies import MealCompletionOutcome, MealCompletionState
 from uribap_api.domain.recipes.policies import RecipeMealType
 
 
@@ -16,6 +16,10 @@ class CompletionActualLine(BaseModel):
 
 class MealCompletionCreate(BaseModel):
     lines: list[CompletionActualLine] | None = None
+
+
+class MealCompletionSkip(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
 
 
 class MealCompletionLineResponse(BaseModel):
@@ -32,6 +36,8 @@ class MealCompletionLineResponse(BaseModel):
 class MealCompletionResponse(BaseModel):
     id: UUID
     state: MealCompletionState
+    outcome: MealCompletionOutcome
+    outcome_note: str | None
     version: int
     meal_plan_entry_id: UUID
     planned_date: date | None

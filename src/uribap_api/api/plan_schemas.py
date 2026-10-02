@@ -1,8 +1,10 @@
 from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from uribap_api.api.completion_schemas import MealCompletionResponse
 from uribap_api.domain.planning.policies import (
     MealPlanningError,
     MealPlanState,
@@ -104,3 +106,33 @@ class MealPlanStateEventResponse(BaseModel):
 
 class MealPlanEventPage(BaseModel):
     items: list[MealPlanStateEventResponse]
+
+
+class MealPlanEntryDetailIngredientResponse(BaseModel):
+    ingredient_id: UUID
+    ingredient_name: str
+    required_amount: Decimal
+    unit: str
+    optional: bool
+    on_hand_amount: Decimal
+    shortfall_amount: Decimal
+    position: int
+
+
+class MealPlanEntryDetailResponse(BaseModel):
+    entry_id: UUID
+    plan_id: UUID
+    plan_state: MealPlanState
+    planned_date: date
+    meal_type: RecipeMealType
+    servings: int
+    notes: str | None
+    recipe_id: UUID
+    recipe_name: str
+    recipe_description: str | None
+    recipe_version_id: UUID
+    version_number: int
+    base_servings: int
+    prep_minutes: int
+    ingredients: list[MealPlanEntryDetailIngredientResponse]
+    completion: MealCompletionResponse | None

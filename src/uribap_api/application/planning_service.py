@@ -1,23 +1,38 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from uribap_api.api.plan_schemas import (
     MealPlanCreate,
     MealPlanEntryCreate,
+    MealPlanEntryDetailIngredientResponse,
+    MealPlanEntryDetailResponse,
     MealPlanEntryResponse,
     MealPlanEntryUpdate,
     MealPlanResponse,
     MealPlanStateEventResponse,
     MealPlanTransition,
 )
+from uribap_api.application.completion_service import get_completion as completion_response
 from uribap_api.application.event_service import record_event
 from uribap_api.application.preparation_service import reconcile_derived_tasks
+from uribap_api.domain.completion.policies import (
+    MealCompletionError,
+    MealCompletionState,
+)
 from uribap_api.domain.events.policies import DomainEventKind
+from uribap_api.domain.planning.entry_detail import (
+    EntryDetailStockLot,
+    RecipeIngredientRow,
+    calculate_entry_detail_ingredients,
+)
 from uribap_api.domain.planning.policies import (
     MealPlanAction,
     MealPlanningError,
@@ -32,17 +47,25 @@ from uribap_api.domain.planning.policies import (
 from uribap_api.domain.recipes.policies import RecipeVersionState
 from uribap_api.domain.shared.errors import DomainError
 from uribap_api.domain.shared.fingerprint import operation_fingerprint
+from uribap_api.infrastructure.persistence.completion_models import MealCompletion
 from uribap_api.infrastructure.persistence.household_models import (
+    Household,
     HouseholdMember,
     MembershipStatus,
 )
+from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
+from uribap_api.infrastructure.persistence.inventory_models import InventoryLot
 from uribap_api.infrastructure.persistence.planning_models import (
     MealPlan,
     MealPlanEntry,
     MealPlanOperation,
     MealPlanStateEvent,
 )
-from uribap_api.infrastructure.persistence.recipe_models import Recipe, RecipeVersion
+from uribap_api.infrastructure.persistence.recipe_models import (
+    Recipe,
+    RecipeVersion,
+    RecipeVersionIngredient,
+)
 
 
 @dataclass(frozen=True)
@@ -378,6 +401,163 @@ def _get_entry(
             "not_found", "Meal plan entry not found", "The plan entry could not be found.", 404
         )
     return entry
+
+
+def get_entry_detail(
+    session: Session,
+    membership: HouseholdMember,
+    plan_id: UUID,
+    entry_id: UUID,
+) -> MealPlanEntryDetailResponse:
+    plan = _get_plan(session, membership, plan_id)
+    entry = _get_entry(session, membership, plan, entry_id)
+    version = session.get(RecipeVersion, entry.recipe_version_id)
+    recipe = (
+        session.scalar(
+            select(Recipe).where(
+                Recipe.id == version.recipe_id,
+                Recipe.household_id == membership.household_id,
+            )
+        )
+        if version is not None
+        else None
+    )
+    if version is None or recipe is None:
+        raise DomainError(
+            "not_found", "Recipe not found", "The recipe for this entry could not be found.", 404
+        )
+
+    recipe_ingredients = list(
+        session.scalars(
+            select(RecipeVersionIngredient)
+            .where(RecipeVersionIngredient.recipe_version_id == version.id)
+            .order_by(
+                RecipeVersionIngredient.position,
+                RecipeVersionIngredient.ingredient_id,
+                RecipeVersionIngredient.id,
+            )
+        )
+    )
+    recipe_ingredient_ids = sorted({row.ingredient_id for row in recipe_ingredients})
+    stock_lots = (
+        list(
+            session.scalars(
+                select(InventoryLot).where(
+                    InventoryLot.household_id == membership.household_id,
+                    InventoryLot.ingredient_id.in_(recipe_ingredient_ids),
+                )
+            )
+        )
+        if recipe_ingredient_ids
+        else []
+    )
+    household = session.get(Household, membership.household_id)
+    if household is None:
+        raise DomainError(
+            "not_found",
+            "Household not found",
+            "The household could not be found.",
+            404,
+        )
+    local_today = datetime.now(UTC).astimezone(ZoneInfo(household.timezone)).date()
+    try:
+        detail_ingredients = calculate_entry_detail_ingredients(
+            [
+                RecipeIngredientRow(
+                    row_id=row.id,
+                    ingredient_id=row.ingredient_id,
+                    amount=Decimal(row.amount),
+                    unit=row.unit,
+                    optional=row.optional,
+                    position=row.position,
+                )
+                for row in recipe_ingredients
+            ],
+            [
+                EntryDetailStockLot(
+                    ingredient_id=lot.ingredient_id,
+                    quantity_on_hand=Decimal(lot.quantity_on_hand),
+                    unit=lot.unit,
+                    available=lot.available,
+                    expiration_date=lot.expiration_date,
+                )
+                for lot in stock_lots
+            ],
+            servings=entry.servings,
+            base_servings=version.base_servings,
+            planned_date=entry.planned_date,
+            local_today=local_today,
+        )
+    except MealCompletionError as exc:
+        raise DomainError("validation_error", "Invalid completion", str(exc), 422) from exc
+
+    ingredient_ids = sorted({line.ingredient_id for line in detail_ingredients})
+    ingredient_names = (
+        {
+            row[0]: row[1]
+            for row in session.execute(
+                select(Ingredient.id, Ingredient.name).where(
+                    or_(
+                        Ingredient.household_id == membership.household_id,
+                        Ingredient.household_id.is_(None),
+                    ),
+                    Ingredient.id.in_(ingredient_ids),
+                )
+            ).all()
+        }
+        if ingredient_ids
+        else {}
+    )
+    if any(ingredient_id not in ingredient_names for ingredient_id in ingredient_ids):
+        raise DomainError(
+            "not_found",
+            "Ingredient not found",
+            "An ingredient for this recipe could not be found.",
+            404,
+        )
+
+    completion = session.scalar(
+        select(MealCompletion).where(
+            MealCompletion.household_id == membership.household_id,
+            MealCompletion.meal_plan_entry_id == entry.id,
+            MealCompletion.state == MealCompletionState.RECORDED,
+        )
+    )
+    current_completion = (
+        completion_response(session, membership, completion.id) if completion is not None else None
+    )
+
+    ingredients = [
+        MealPlanEntryDetailIngredientResponse(
+            ingredient_id=line.ingredient_id,
+            ingredient_name=ingredient_names[line.ingredient_id],
+            required_amount=line.required_amount,
+            unit=line.unit,
+            optional=line.optional,
+            on_hand_amount=line.on_hand_amount,
+            shortfall_amount=line.shortfall_amount,
+            position=line.position,
+        )
+        for line in detail_ingredients
+    ]
+    return MealPlanEntryDetailResponse(
+        entry_id=entry.id,
+        plan_id=plan.id,
+        plan_state=plan.state,
+        planned_date=entry.planned_date,
+        meal_type=entry.meal_type,
+        servings=entry.servings,
+        notes=entry.notes,
+        recipe_id=recipe.id,
+        recipe_name=recipe.name,
+        recipe_description=recipe.description,
+        recipe_version_id=version.id,
+        version_number=version.version_number,
+        base_servings=version.base_servings,
+        prep_minutes=version.prep_minutes,
+        ingredients=ingredients,
+        completion=current_completion,
+    )
 
 
 def add_entry(
