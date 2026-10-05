@@ -144,8 +144,13 @@ scaled lines, stock and shortfall values, optional flags, ordering, and recipe d
   substitute a separate instruction model for that field.
 - **FR-018**: Detail ingredient `required_amount` MUST use `planned_lines` from the completion
   domain, with the entry's servings and version's base servings.
-- **FR-019**: Detail `on_hand_amount` MUST sum available inventory lots for the same household,
-  ingredient, and unit. `shortfall_amount` MUST be `max(0, required_amount - on_hand_amount)`.
+- **FR-019**: Detail `on_hand_amount` MUST start from the sum of available, positive inventory
+  lots for the same household, ingredient, and unit whose expiration date is not before
+  `max(local_today, planned_date)`. When several recipe lines share an ingredient and unit, lines
+  are processed in recipe order (position, ingredient id, row id) and each line's
+  `on_hand_amount` is the stock still unallocated after earlier lines took
+  `min(required_amount, remaining)`. `shortfall_amount` MUST be
+  `max(0, required_amount - on_hand_amount)`.
 - **FR-020**: Detail ingredient lines MUST include ingredient id/name, unit, optional flag, and
   recipe position, ordered by recipe position then id.
 - **FR-021**: Detail reads MUST be tenant-scoped, return `404` for a foreign plan or entry, and

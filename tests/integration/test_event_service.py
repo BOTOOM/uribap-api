@@ -291,7 +291,8 @@ def test_list_activity_paginates_and_isolates(integration_engine) -> None:
         kinds = {entry.kind for entry in entries}
         assert DomainEventKind.PLAN_APPROVED.value in kinds
         assert all(entry.household_id == household.id for entry in entries)
-        assert summary["pending"] == 1
+        assert summary["pending"] == 0
+        assert summary["suppressed"] == 1
 
         page1, more1, _ = list_activity(session, member, page=1, page_size=1)
         assert more1 is True
@@ -316,14 +317,49 @@ def test_invitation_emits_event_and_outbox(integration_engine) -> None:
         )
         session.commit()
         assert invitation.id is not None
-        assert outbox.status == OutboxStatus.PENDING
+        assert outbox.status == OutboxStatus.SUPPRESSED
 
         events = _events(session, household.id, DomainEventKind.INVITATION_CREATED.value)
         assert len(events) == 1
 
-        # outbox summary sees the pending invitation intent
+        # Outbox summaries show that invitation delivery is owned by the route.
         _entries, _more, summary = list_activity(session, member, page=1, page_size=5)
-        assert summary["pending"] == 1
+        assert summary["pending"] == 0
+        assert summary["suppressed"] == 1
+
+
+def test_process_outbox_does_not_claim_invitation_awaiting_route_delivery(
+    integration_engine,
+) -> None:
+    with Session(integration_engine) as session:
+        household, member = _member(session)
+        _invitation, _raw, entry = create_invitation(
+            session,
+            household_id=household.id,
+            inviter=member,
+            payload=InvitationCreate(email=f"{uuid4()}@example.test"),
+            request_id="req-test",
+        )
+        session.commit()
+        entry_id = entry.id
+        assert entry.status == OutboxStatus.SUPPRESSED
+
+        pending_count = session.scalar(
+            select(func.count())
+            .select_from(EmailOutboxEntry)
+            .where(EmailOutboxEntry.status == OutboxStatus.PENDING)
+        )
+        process_outbox(session, get_settings(), limit=(pending_count or 0) + 1)
+
+        session.refresh(entry)
+        assert entry.status == OutboxStatus.SUPPRESSED
+        assert entry.attempts == 0
+        intent_count = session.scalar(
+            select(func.count())
+            .select_from(EmailDeliveryIntent)
+            .where(EmailDeliveryIntent.email_outbox_entry_id == entry_id)
+        )
+        assert intent_count == 0
 
 
 def test_process_outbox_suppresses_without_smtp(

@@ -143,11 +143,19 @@ class InvitationCreate(BaseModel):
     email: str
     role: InvitationRole = "member"
     expires_in_hours: int = Field(default=72, ge=1, le=168)
+    display_name: str | None = Field(default=None, max_length=200)
 
     @field_validator("email")
     @classmethod
     def validate_email(cls, value: str) -> str:
         return normalize_email(value)
+
+    @field_validator("display_name")
+    @classmethod
+    def normalize_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
 
 
 class InvitationResponse(BaseModel):
@@ -161,9 +169,26 @@ class InvitationResponse(BaseModel):
     created_at: datetime
 
 
+class InvitationCreatedResponse(InvitationResponse):
+    delivery: Literal["zitadel_invite", "existing_account", "email", "failed"]
+
+
 class InvitationPage(BaseModel):
     items: list[InvitationResponse]
     page_info: PageInfo
+
+
+class PendingInvitationResponse(BaseModel):
+    id: UUID
+    household_id: UUID
+    household_name: str
+    requested_role: InvitationRole
+    expires_at: datetime
+    invited_by_display_name: str | None
+
+
+class PendingInvitationPage(BaseModel):
+    items: list[PendingInvitationResponse]
 
 
 class InvitationAccept(BaseModel):
