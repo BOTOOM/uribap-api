@@ -131,3 +131,100 @@ def test_userinfo_connect_host_rejects_production_remote_or_https_issuers(
 def test_userinfo_connect_host_rejects_arbitrary_host() -> None:
     with pytest.raises(ValueError):
         userinfo_settings(oidc_userinfo_connect_host="attacker.example.test")
+
+
+def zitadel_settings(**overrides: str) -> Settings:
+    values = {
+        "_env_file": None,
+        "environment": "test",
+        "oidc_issuer": "https://zitadel.example.test/",
+        "zitadel_service_token": "synthetic-service-token",
+        "zitadel_organization_id": "org-123",
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
+@pytest.mark.parametrize(
+    ("service_token", "organization_id"),
+    [("synthetic-service-token", ""), ("", "org-123")],
+)
+def test_zitadel_credentials_must_be_configured_together(
+    service_token: str, organization_id: str
+) -> None:
+    with pytest.raises(ValueError, match="configured together") as exc_info:
+        zitadel_settings(
+            zitadel_service_token=service_token,
+            zitadel_organization_id=organization_id,
+        )
+    if service_token:
+        assert service_token not in str(exc_info.value)
+
+
+def test_zitadel_invitations_are_enabled_only_with_both_credentials() -> None:
+    assert zitadel_settings().zitadel_invitations_enabled is True
+    assert (
+        zitadel_settings(zitadel_service_token="", zitadel_organization_id="")
+        .zitadel_invitations_enabled
+        is False
+    )
+
+
+def test_zitadel_api_url_falls_back_to_normalized_issuer_and_derives_invite_template() -> None:
+    settings = zitadel_settings(zitadel_api_url="")
+
+    assert settings.zitadel_api_url == "https://zitadel.example.test"
+    assert settings.zitadel_invite_url_template == (
+        "https://zitadel.example.test/ui/v2/login/verify?code={{.Code}}&userId={{.UserID}}"
+        "&organization={{.OrgID}}&invite=true"
+    )
+
+
+def test_zitadel_api_url_is_normalized_and_custom_invite_template_is_preserved() -> None:
+    settings = zitadel_settings(
+        zitadel_api_url="https://api.example.test///",
+        zitadel_invite_url_template="https://login.example.test/{{.Code}}",
+    )
+
+    assert settings.zitadel_api_url == "https://api.example.test"
+    assert settings.zitadel_invite_url_template == "https://login.example.test/{{.Code}}"
+
+
+def test_derived_zitadel_invite_template_obeys_provider_length_limit() -> None:
+    with pytest.raises(ValueError, match="at most 200 characters"):
+        zitadel_settings(
+            oidc_issuer=f"https://{'z' * 150}.example.test",
+            zitadel_api_url="",
+        )
+
+
+@pytest.mark.parametrize("issuer", ["", "http://zitadel.example.test"])
+def test_production_zitadel_api_url_allows_non_https_when_invitations_are_disabled(
+    issuer: str,
+) -> None:
+    settings = zitadel_settings(
+        environment="production",
+        database_url="postgresql+psycopg://u:p@db.example.test/uribap",
+        oidc_issuer=issuer,
+        zitadel_api_url="",
+        zitadel_service_token="",
+        zitadel_organization_id="",
+    )
+
+    assert settings.zitadel_invitations_enabled is False
+    assert settings.zitadel_api_url == issuer.rstrip("/")
+
+
+def test_production_zitadel_api_url_requires_https_when_invitations_are_enabled() -> None:
+    with pytest.raises(ValueError, match="HTTPS in production"):
+        zitadel_settings(
+            environment="production",
+            database_url="postgresql+psycopg://u:p@db.example.test/uribap",
+            zitadel_api_url="http://zitadel.example.test",
+        )
+
+
+def test_zitadel_service_token_is_not_in_settings_repr() -> None:
+    settings = zitadel_settings()
+
+    assert "synthetic-service-token" not in repr(settings)

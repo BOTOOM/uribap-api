@@ -12,6 +12,7 @@ from uribap_api.domain.identity.policies import MembershipRole, MembershipStatus
 from uribap_api.domain.shared.errors import DomainError
 from uribap_api.infrastructure.database import get_db_session
 from uribap_api.infrastructure.identity.claims import IdentityClaims
+from uribap_api.infrastructure.identity.zitadel_users import ZitadelUserDirectory
 from uribap_api.infrastructure.logging import get_request_id
 from uribap_api.infrastructure.persistence.household_models import HouseholdMember
 from uribap_api.infrastructure.persistence.identity_models import AppUser
@@ -28,6 +29,13 @@ class AuthenticatedPrincipal:
 def get_session(request: Request) -> Generator[Session]:
     session_factory = request.app.state.session_factory
     yield from get_db_session(session_factory)
+
+
+def get_user_directory(request: Request) -> ZitadelUserDirectory | None:
+    settings = request.app.state.settings
+    if not settings.zitadel_invitations_enabled:
+        return None
+    return ZitadelUserDirectory(settings)
 
 
 async def get_identity_claims(
