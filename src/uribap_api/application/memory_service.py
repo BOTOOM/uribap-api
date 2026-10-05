@@ -526,7 +526,7 @@ def _memory_create_fingerprint(
         request = {
             "kind": payload.kind.value,
             "content": payload.content,
-            "diner_name": " ".join(requested_diner_name.split()).casefold(),
+            "diner_name": requested_diner_name.strip().lower(),
             "by": "name",
         }
     return operation_fingerprint("household_memory_create", request)

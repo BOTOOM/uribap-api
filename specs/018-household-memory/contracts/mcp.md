@@ -23,9 +23,9 @@ All tools run against the household fixed by the authenticated MCP bearer token.
   active household diners. Unknown names return an error telling the agent to create the diner
   first. Omitting both stores household-level memory. Reusing an idempotency key with the same
   request replays the original result; reusing it for a different request returns an idempotency
-  conflict. For name-based calls, the fingerprint uses the normalized name rather than the resolved
-  diner ID, so a retry returns the original result if the diner was renamed or the name was later
-  assigned to someone else.
+  conflict. For name-based calls, the fingerprint uses the trimmed and lowercased name without
+  collapsing internal whitespace rather than the resolved diner ID, so a retry returns the original
+  result if the diner was renamed or the name was later assigned to someone else.
 - `uribap_update_memory(memory_id, content?, kind?, expected_version?)` — WRITE. When
   `expected_version` is omitted, loads and uses the current memory version before updating.
 - `uribap_forget_memory(memory_id)` — WRITE. Soft-archives the memory.

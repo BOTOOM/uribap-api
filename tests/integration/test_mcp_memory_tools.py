@@ -414,3 +414,55 @@ def test_remember_by_name_idempotency_replays_after_rename_and_name_reuse(
             memory for diner_profile in profile["diners"] for memory in diner_profile["memories"]
         ]
         assert [memory["id"] for memory in memories] == [original_memory["id"]]
+
+
+def test_remember_by_name_idempotency_preserves_internal_spaces(
+    memory_mcp_context: dict[str, str],
+) -> None:
+    token = memory_mcp_context["token"]
+    with TestClient(app) as client:
+        first_diner = _call(
+            client,
+            token,
+            "uribap_add_diner",
+            {"display_name": "Ana Sol", "idempotency_key": "ana-single-space"},
+            40,
+        )["structuredContent"]
+        second_diner = _call(
+            client,
+            token,
+            "uribap_add_diner",
+            {"display_name": "Ana  Sol", "idempotency_key": "ana-double-space"},
+            41,
+        )["structuredContent"]
+        assert first_diner["id"] != second_diner["id"]
+
+        original_memory = _call(
+            client,
+            token,
+            "uribap_remember",
+            {
+                "content": "X",
+                "diner_name": "Ana Sol",
+                "idempotency_key": "k1",
+            },
+            42,
+        )
+        assert original_memory["isError"] is False
+
+        conflict = _call(
+            client,
+            token,
+            "uribap_remember",
+            {
+                "content": "X",
+                "diner_name": "Ana  Sol",
+                "idempotency_key": "k1",
+            },
+            43,
+        )
+        assert conflict["isError"] is True
+        assert "idempotency" in _error_text(conflict).casefold()
+        assert (conflict.get("structuredContent") or {}).get("id") != original_memory[
+            "structuredContent"
+        ]["id"]
