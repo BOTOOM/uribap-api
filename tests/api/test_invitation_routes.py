@@ -17,6 +17,8 @@ def test_invitation_routes_require_authentication() -> None:
             ),
             client.delete(f"/api/v1/households/{household_id}/invitations/{invitation_id}"),
             client.post("/api/v1/invitations/accept", json={"token": "synthetic-token-value"}),
+            client.get("/api/v1/me/invitations"),
+            client.post(f"/api/v1/me/invitations/{invitation_id}/accept"),
         ]
-    assert [response.status_code for response in responses] == [401, 401, 401, 401]
+    assert [response.status_code for response in responses] == [401, 401, 401, 401, 401, 401]
     assert all(response.json()["code"] == "unauthorized" for response in responses)

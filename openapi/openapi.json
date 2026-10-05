@@ -1012,6 +1012,18 @@
       },
       "InvitationCreate": {
         "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -1037,6 +1049,74 @@
           "email"
         ],
         "title": "InvitationCreate",
+        "type": "object"
+      },
+      "InvitationCreatedResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "delivery": {
+            "enum": [
+              "zitadel_invite",
+              "existing_account",
+              "email",
+              "failed"
+            ],
+            "title": "Delivery",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "household_id": {
+            "format": "uuid",
+            "title": "Household Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "invited_by_user_id": {
+            "format": "uuid",
+            "title": "Invited By User Id",
+            "type": "string"
+          },
+          "requested_role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "title": "Requested Role",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "household_id",
+          "email",
+          "requested_role",
+          "status",
+          "expires_at",
+          "invited_by_user_id",
+          "created_at",
+          "delivery"
+        ],
+        "title": "InvitationCreatedResponse",
         "type": "object"
       },
       "InvitationPage": {
@@ -2385,6 +2465,74 @@
           }
         },
         "title": "PageInfo",
+        "type": "object"
+      },
+      "PendingInvitationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingInvitationResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PendingInvitationPage",
+        "type": "object"
+      },
+      "PendingInvitationResponse": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "household_id": {
+            "format": "uuid",
+            "title": "Household Id",
+            "type": "string"
+          },
+          "household_name": {
+            "title": "Household Name",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "invited_by_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invited By Display Name"
+          },
+          "requested_role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "title": "Requested Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "household_id",
+          "household_name",
+          "requested_role",
+          "expires_at",
+          "invited_by_display_name"
+        ],
+        "title": "PendingInvitationResponse",
         "type": "object"
       },
       "PreparationRuleCreate": {
@@ -4262,7 +4410,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvitationResponse"
+                  "$ref": "#/components/schemas/InvitationCreatedResponse"
                 }
               }
             },
@@ -5604,6 +5752,80 @@
         "summary": "Current User",
         "tags": [
           "identity"
+        ]
+      }
+    },
+    "/api/v1/me/invitations": {
+      "get": {
+        "operationId": "list_my_invitations_api_v1_me_invitations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingInvitationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List My Invitations",
+        "tags": [
+          "invitations"
+        ]
+      }
+    },
+    "/api/v1/me/invitations/{invitation_id}/accept": {
+      "post": {
+        "operationId": "accept_my_invitation_api_v1_me_invitations__invitation_id__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invitation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Accept My Invitation",
+        "tags": [
+          "invitations"
         ]
       }
     },
