@@ -19,6 +19,11 @@ class MealCompletionState(StrEnum):
     REOPENED = "reopened"
 
 
+class MealCompletionOutcome(StrEnum):
+    COOKED = "cooked"
+    SKIPPED = "skipped"
+
+
 class MealCompletionAction(StrEnum):
     CORRECT = "correct"
     REOPEN = "reopen"
@@ -73,32 +78,51 @@ class ConsumptionLine:
 def planned_lines(
     ingredients: list[RecipeIngredientInput], servings: int, base_servings: int
 ) -> list[ConsumptionLine]:
-    try:
-        factor = scale_factor(servings, base_servings)
-    except DemandForecastError as exc:
-        raise MealCompletionError(str(exc)) from exc
+    factor = _completion_scale_factor(servings, base_servings)
     lines: list[ConsumptionLine] = []
     for ingredient in ingredients:
-        if not ingredient.unit:
-            raise MealCompletionError("ingredient unit must not be empty")
-        try:
-            scaled = quantize_amount(ingredient.amount * factor)
-        except InventoryLedgerError as exc:
-            raise MealCompletionError(str(exc)) from exc
-        if scaled <= 0:
-            continue
-        lines.append(
-            ConsumptionLine(
-                ingredient_id=ingredient.ingredient_id,
-                planned_amount=scaled,
-                actual_amount=scaled,
-                unit=ingredient.unit,
-                optional=ingredient.optional,
-            )
-        )
+        line = _scaled_recipe_ingredient(ingredient, factor)
+        if line is not None:
+            lines.append(line)
     if not lines:
         raise MealCompletionError("the recipe version has no consumable ingredients")
     return lines
+
+
+def scale_recipe_ingredient(
+    ingredient: RecipeIngredientInput, servings: int, base_servings: int
+) -> ConsumptionLine | None:
+    return _scaled_recipe_ingredient(
+        ingredient,
+        _completion_scale_factor(servings, base_servings),
+    )
+
+
+def _completion_scale_factor(servings: int, base_servings: int) -> Decimal:
+    try:
+        return scale_factor(servings, base_servings)
+    except DemandForecastError as exc:
+        raise MealCompletionError(str(exc)) from exc
+
+
+def _scaled_recipe_ingredient(
+    ingredient: RecipeIngredientInput, factor: Decimal
+) -> ConsumptionLine | None:
+    if not ingredient.unit:
+        raise MealCompletionError("ingredient unit must not be empty")
+    try:
+        scaled = quantize_amount(ingredient.amount * factor)
+    except InventoryLedgerError as exc:
+        raise MealCompletionError(str(exc)) from exc
+    if scaled <= 0:
+        return None
+    return ConsumptionLine(
+        ingredient_id=ingredient.ingredient_id,
+        planned_amount=scaled,
+        actual_amount=scaled,
+        unit=ingredient.unit,
+        optional=ingredient.optional,
+    )
 
 
 @dataclass(frozen=True)

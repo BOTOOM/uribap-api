@@ -6,11 +6,14 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from uribap_api.api.completion_schemas import MealCompletionCreate
 from uribap_api.api.plan_schemas import (
     MealPlanCreate,
     MealPlanEntryCreate,
     MealPlanTransition,
 )
+from uribap_api.application import completion_service
+from uribap_api.application.completion_service import complete_entry, reopen_completion
 from uribap_api.application.forecast_service import demand_forecast
 from uribap_api.application.planning_service import add_entry, create_plan, transition_plan
 from uribap_api.domain.forecast.policies import DemandForecastError
@@ -23,7 +26,10 @@ from uribap_api.infrastructure.persistence.household_models import Household, Ho
 from uribap_api.infrastructure.persistence.identity_models import AppUser
 from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
 from uribap_api.infrastructure.persistence.inventory_models import InventoryLot
-from uribap_api.infrastructure.persistence.planning_models import MealPlanOperation
+from uribap_api.infrastructure.persistence.planning_models import (
+    MealPlanEntry,
+    MealPlanOperation,
+)
 from uribap_api.infrastructure.persistence.recipe_models import (
     Recipe,
     RecipeVersion,
@@ -270,4 +276,142 @@ def test_forecast_window_validation_and_tenant_isolation(integration_engine) -> 
 
         result = demand_forecast(session, member, week, week + timedelta(days=6))
         assert result.considered_plan_ids == []
+        assert result.items == []
+
+
+@pytest.mark.integration
+def test_forecast_excludes_recorded_outcomes_and_restores_reopened_entries(
+    integration_engine,
+) -> None:
+    week = WEEK + timedelta(weeks=int(uuid4().int % 200) + 1500)
+    with Session(integration_engine) as session:
+        household, member = _member(session)
+        other_household, other_member = _member(session)
+        rice = _ingredient(session, household, "ResolvedRice")
+        version = _version(session, household, member, rice, "100", base=2)
+        lot = InventoryLot(
+            household_id=household.id,
+            ingredient_id=rice.id,
+            quantity_on_hand=Decimal("1000"),
+            unit="g",
+            location=InventoryLocation.PANTRY,
+            available=True,
+            created_by_user_id=member.user_id,
+        )
+        session.add(lot)
+        session.flush()
+        plan_id = _approved_plan(
+            session,
+            member,
+            week,
+            [(week, version, 2), (week, version, 2), (week, version, 2)],
+        )
+        session.commit()
+        entries = list(
+            session.scalars(
+                select(MealPlanEntry)
+                .where(MealPlanEntry.meal_plan_id == UUID(plan_id))
+                .order_by(MealPlanEntry.position)
+            )
+        )
+
+        cooked = complete_entry(
+            session, member, UUID(plan_id), entries[0].id, MealCompletionCreate(), None
+        )
+        skip_entry = completion_service.skip_entry
+        skipped = skip_entry(
+            session,
+            member,
+            UUID(plan_id),
+            entries[1].id,
+            reason="delivery",
+            idempotency_key=f"forecast-skip-{uuid4()}",
+        )
+
+        other_ingredient = _ingredient(session, other_household, "OtherResolvedRice")
+        other_version = _version(session, other_household, other_member, other_ingredient, "200")
+        other_lot = InventoryLot(
+            household_id=other_household.id,
+            ingredient_id=other_ingredient.id,
+            quantity_on_hand=Decimal("500"),
+            unit="g",
+            location=InventoryLocation.PANTRY,
+            available=True,
+            created_by_user_id=other_member.user_id,
+        )
+        session.add(other_lot)
+        other_plan_id = _approved_plan(session, other_member, week, [(week, other_version, 2)])
+        session.commit()
+        other_entry = session.scalar(
+            select(MealPlanEntry).where(MealPlanEntry.meal_plan_id == UUID(other_plan_id))
+        )
+        assert other_entry is not None
+        complete_entry(
+            session,
+            other_member,
+            UUID(other_plan_id),
+            other_entry.id,
+            MealCompletionCreate(),
+            None,
+        )
+
+        result = demand_forecast(session, member, week, week + timedelta(days=6))
+        assert result.considered_plan_ids == [UUID(plan_id)]
+        assert len(result.items) == 1
+        assert result.items[0].required_amount == Decimal("100.000000")
+        session.refresh(lot)
+        assert lot.quantity_on_hand == Decimal("900.000000")
+
+        reopen_completion(
+            session,
+            member,
+            UUID(skipped.payload["id"]),
+            expected_version=1,
+            reason="meal planned again",
+            idempotency_key=None,
+        )
+        session.refresh(lot)
+        assert lot.quantity_on_hand == Decimal("900.000000")
+        reopen_completion(
+            session,
+            member,
+            UUID(cooked.payload["id"]),
+            expected_version=1,
+            reason="meal planned again",
+            idempotency_key=None,
+        )
+
+        restored = demand_forecast(session, member, week, week + timedelta(days=6))
+        assert restored.considered_plan_ids == [UUID(plan_id)]
+        assert restored.items[0].required_amount == Decimal("300.000000")
+        session.refresh(lot)
+        assert lot.quantity_on_hand == Decimal("1000.000000")
+
+
+@pytest.mark.integration
+def test_all_resolved_plan_remains_traceable_with_empty_forecast(integration_engine) -> None:
+    week = WEEK + timedelta(weeks=int(uuid4().int % 200) + 1800)
+    with Session(integration_engine) as session:
+        household, member = _member(session)
+        rice = _ingredient(session, household, "SkippedRice")
+        version = _version(session, household, member, rice, "100", base=2)
+        plan_id = _approved_plan(session, member, week, [(week, version, 2)])
+        session.commit()
+        entry = session.scalar(
+            select(MealPlanEntry).where(MealPlanEntry.meal_plan_id == UUID(plan_id))
+        )
+        assert entry is not None
+
+        skip_entry = completion_service.skip_entry
+        skip_entry(
+            session,
+            member,
+            UUID(plan_id),
+            entry.id,
+            reason=None,
+            idempotency_key=f"all-resolved-{uuid4()}",
+        )
+
+        result = demand_forecast(session, member, week, week + timedelta(days=6))
+        assert result.considered_plan_ids == [UUID(plan_id)]
         assert result.items == []

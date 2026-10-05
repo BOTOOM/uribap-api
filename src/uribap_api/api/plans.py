@@ -10,6 +10,7 @@ from uribap_api.api.inventory_schemas import ProblemDetails
 from uribap_api.api.plan_schemas import (
     MealPlanCreate,
     MealPlanEntryCreate,
+    MealPlanEntryDetailResponse,
     MealPlanEntryUpdate,
     MealPlanEventPage,
     MealPlanResponse,
@@ -21,6 +22,7 @@ from uribap_api.application.planning_service import (
     delete_entry,
     event_response,
     get_current_plan,
+    get_entry_detail,
     get_plan,
     list_events,
     plan_response,
@@ -72,6 +74,20 @@ def get_plan_route(
     session: Session = Depends(get_session),
 ) -> MealPlanResponse:
     return plan_response(session, membership, get_plan(session, membership, plan_id))
+
+
+@router.get(
+    "/{plan_id}/entries/{entry_id}/detail",
+    response_model=MealPlanEntryDetailResponse,
+    responses=ERROR_RESPONSES,
+)
+def plan_entry_detail_route(
+    plan_id: UUID,
+    entry_id: UUID,
+    membership: HouseholdMember = Depends(get_active_household_membership),
+    session: Session = Depends(get_session),
+) -> MealPlanEntryDetailResponse:
+    return get_entry_detail(session, membership, plan_id, entry_id)
 
 
 @router.post(
