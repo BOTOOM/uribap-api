@@ -11,6 +11,7 @@ from uribap_api.mcp import (
     tools_catalog,
     tools_household,
     tools_inventory,
+    tools_memory,
     tools_plan,
     tools_shopping,
 )
@@ -38,9 +39,7 @@ automatically — on a 409/conflict error, re-read the entity and retry the call
 """
 
 
-def build_mcp_server(
-    session_factory: Callable[[], Session], http_path: str
-) -> FastMCP:
+def build_mcp_server(session_factory: Callable[[], Session], http_path: str) -> FastMCP:
     mcp = FastMCP(
         "uribap",
         instructions=INSTRUCTIONS,
@@ -49,9 +48,7 @@ def build_mcp_server(
         streamable_http_path=http_path,
         # Bearer-token auth already guards the endpoint; Host-header DNS
         # rebinding checks would 421 every remote (Coolify) request.
-        transport_security=TransportSecuritySettings(
-            enable_dns_rebinding_protection=False
-        ),
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
     runtime = McpRuntime(session_factory)
     for module in (
@@ -59,15 +56,14 @@ def build_mcp_server(
         tools_catalog,
         tools_inventory,
         tools_plan,
+        tools_memory,
         tools_shopping,
     ):
         module.register(mcp, runtime)
     return mcp
 
 
-def build_mcp_app(
-    mcp_server: FastMCP, session_factory: Callable[[], Session]
-) -> Starlette:
+def build_mcp_app(mcp_server: FastMCP, session_factory: Callable[[], Session]) -> Starlette:
     """The ASGI app to mount: MCP transport behind bearer-token auth."""
     app = mcp_server.streamable_http_app()
     app.add_middleware(McpAuthMiddleware, session_factory=session_factory)
