@@ -1,15 +1,18 @@
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from uribap_api.api.dependencies import get_active_household_membership, get_session
+from uribap_api.api.inventory_schemas import ProblemDetails
 from uribap_api.api.recipe_schemas import (
     IngredientCreate,
     IngredientPage,
     IngredientResponse,
     IngredientUpdate,
 )
+from uribap_api.api.schemas import PageInfo
 from uribap_api.application.ingredient_service import (
     archive_ingredient,
     create_ingredient,
@@ -21,6 +24,12 @@ from uribap_api.infrastructure.persistence.household_models import HouseholdMemb
 from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
 
 router = APIRouter(prefix="/ingredients", tags=["ingredients"])
+
+ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: {"model": ProblemDetails},
+    403: {"model": ProblemDetails},
+    422: {"model": ProblemDetails},
+}
 
 
 def response(ingredient: Ingredient) -> IngredientResponse:
@@ -37,18 +46,28 @@ def response(ingredient: Ingredient) -> IngredientResponse:
     )
 
 
-@router.get("", response_model=IngredientPage)
+@router.get("", response_model=IngredientPage, responses=ERROR_RESPONSES)
 def list_route(
     query: str | None = None,
     dimension: str | None = None,
     include_global: bool = True,
     limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None),
     membership: HouseholdMember = Depends(get_active_household_membership),
     session: Session = Depends(get_session),
 ) -> IngredientPage:
-    items = list_ingredients(session, membership, query, dimension, include_global, limit)
+    page = list_ingredients(
+        session,
+        membership,
+        query,
+        dimension,
+        include_global,
+        limit,
+        cursor=cursor,
+    )
     return IngredientPage(
-        items=[response(item) for item in items], page_info={"limit": min(limit, 100)}
+        items=[response(item) for item in page.items],
+        page_info=PageInfo(next_cursor=page.next_cursor, limit=min(limit, 100)),
     )
 
 

@@ -26,3 +26,27 @@ def test_openapi_exposes_pantry_staple_contract_fields() -> None:
     assert "pantry_staple" in schemas["IngredientResponse"]["required"]
     assert "pantry_staple" in schemas["DemandForecastLine"]["required"]
     assert "pantry_staple" in schemas["MealPlanEntryDetailIngredientResponse"]["required"]
+
+
+@pytest.mark.api
+def test_openapi_exposes_ingredient_cursor_pagination() -> None:
+    document = app.openapi()
+    operation = document["paths"]["/api/v1/ingredients"]["get"]
+    parameters = {parameter["name"]: parameter for parameter in operation["parameters"]}
+    schemas = document["components"]["schemas"]
+
+    assert parameters["cursor"]["required"] is False
+    assert parameters["cursor"]["in"] == "query"
+    assert (
+        operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+        == "#/components/schemas/IngredientPage"
+    )
+    assert (
+        operation["responses"]["422"]["content"]["application/json"]["schema"]["$ref"]
+        == "#/components/schemas/ProblemDetails"
+    )
+    assert (
+        schemas["IngredientPage"]["properties"]["page_info"]["$ref"]
+        == "#/components/schemas/PageInfo"
+    )
+    assert {"limit", "next_cursor"} <= schemas["PageInfo"]["properties"].keys()

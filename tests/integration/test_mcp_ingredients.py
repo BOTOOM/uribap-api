@@ -108,3 +108,61 @@ def test_mcp_ingredient_tools_create_update_and_list_pantry_staples(
     assert listed["isError"] is False
     assert listed["structuredContent"]["count"] == 1
     assert listed["structuredContent"]["items"][0]["pantry_staple"] is False
+
+
+def test_mcp_ingredient_listing_continues_with_filters_and_preserves_fields(
+    mcp_ingredient_token: str,
+) -> None:
+    prefix = f"mcp-pagination-{uuid4().hex}"
+    ingredient_ids = set()
+
+    with TestClient(app) as client:
+        for suffix in ("a", "b", "c"):
+            created = _call(
+                client,
+                mcp_ingredient_token,
+                "uribap_create_ingredient",
+                {
+                    "name": f"{prefix}-{suffix}",
+                    "dimension": "mass",
+                    "base_unit": "g",
+                },
+                len(ingredient_ids) + 2,
+            )
+            assert created["isError"] is False
+            ingredient_ids.add(created["structuredContent"]["id"])
+
+        filters = {
+            "query": prefix,
+            "dimension": "mass",
+            "include_global": False,
+            "limit": 2,
+        }
+        first_page = _call(
+            client,
+            mcp_ingredient_token,
+            "uribap_list_ingredients",
+            filters,
+            5,
+        )
+        assert first_page["isError"] is False
+        first_payload = first_page["structuredContent"]
+        assert first_payload["count"] == 2
+        assert len(first_payload["items"]) == 2
+        assert first_payload["next_cursor"] is not None
+
+        second_page = _call(
+            client,
+            mcp_ingredient_token,
+            "uribap_list_ingredients",
+            {**filters, "cursor": first_payload["next_cursor"]},
+            6,
+        )
+
+    assert second_page["isError"] is False
+    second_payload = second_page["structuredContent"]
+    assert second_payload["count"] == 1
+    assert len(second_payload["items"]) == 1
+    assert second_payload["next_cursor"] is None
+    actual_ids = {item["id"] for item in first_payload["items"] + second_payload["items"]}
+    assert actual_ids == ingredient_ids
