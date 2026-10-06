@@ -181,6 +181,7 @@ def _ingredient_row(ingredient: Ingredient) -> dict:
         "category": ingredient.category,
         "dimension": ingredient.dimension.value,
         "base_unit": ingredient.base_unit,
+        "pantry_staple": ingredient.pantry_staple,
         "package_size_amount": ingredient.package_size_amount,
         "package_size_unit": ingredient.package_size_unit,
         "scope": "global" if ingredient.household_id is None else "household",
@@ -212,7 +213,8 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         annotations=READ_ONLY.model_copy(update={"title": "List ingredients"}),
         description=(
             "List the ingredient catalog (household + global). Filter with `query` "
-            "(name substring) or `dimension` (count|mass|volume)."
+            "(name substring) or `dimension` (count|mass|volume). Pantry staples are not consumed "
+            "when cooking and appear in shopping only after stock runs out."
         ),
     )
     def list_ingredients(
@@ -248,21 +250,21 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         annotations=WRITE.model_copy(update={"title": "Create ingredient"}),
         description=(
             "Create a household ingredient. `base_unit` must match `dimension`: "
-            "count→unit, mass→g|kg, volume→ml|l."
+            "count→unit, mass→g|kg, volume→ml|l. Pantry staples are not consumed when cooking and "
+            "appear in shopping only after stock runs out."
         ),
     )
     def create_ingredient(
         ctx: Context,
         name: Annotated[str, Field(min_length=1, max_length=160)],
-        dimension: Annotated[
-            IngredientDimension, Field(description="count | mass | volume")
-        ],
+        dimension: Annotated[IngredientDimension, Field(description="count | mass | volume")],
         base_unit: Annotated[str, Field(description="unit | g | kg | ml | l")],
         category: Annotated[str | None, Field(description="Free-form category")] = None,
         package_size_amount: Annotated[
             str | None, Field(description="Decimal string, e.g. '500'")
         ] = None,
         package_size_unit: str | None = None,
+        pantry_staple: bool = False,
     ) -> dict[str, Any]:
         def run(session, membership, _p):
             ingredient = ingredient_service.create_ingredient(
@@ -275,6 +277,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                     base_unit=base_unit,
                     package_size_amount=package_size_amount,
                     package_size_unit=package_size_unit,
+                    pantry_staple=pantry_staple,
                 ),
             )
             return _ingredient_row(ingredient)
@@ -284,13 +287,17 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
     @mcp.tool(
         name="uribap_update_ingredient",
         annotations=WRITE.model_copy(update={"title": "Update ingredient"}),
-        description="Rename a household ingredient or change its category.",
+        description=(
+            "Rename a household ingredient or change its category. Pantry staples are not consumed "
+            "when cooking and appear in shopping only after stock runs out."
+        ),
     )
     def update_ingredient(
         ctx: Context,
         ingredient_id: Annotated[str, Field(description="Ingredient UUID")],
         name: str | None = None,
         category: str | None = None,
+        pantry_staple: bool | None = None,
     ) -> dict[str, Any]:
         return rt.call(
             ctx,
@@ -299,7 +306,11 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
                     session,
                     membership,
                     UUID(ingredient_id),
-                    IngredientUpdate(name=name, category=category),
+                    IngredientUpdate(
+                        name=name,
+                        category=category,
+                        pantry_staple=pantry_staple,
+                    ),
                 )
             ),
         )
@@ -334,9 +345,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         limit: Annotated[int, Field(ge=1, le=100)] = 50,
     ) -> dict[str, Any]:
         def run(session, membership, _p):
-            rows = recipe_service.list_recipes(
-                session, membership, query, include_archived, limit
-            )
+            rows = recipe_service.list_recipes(session, membership, query, include_archived, limit)
             return {
                 "items": [
                     {
@@ -364,8 +373,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         name="uribap_get_recipe",
         annotations=READ_ONLY.model_copy(update={"title": "Recipe detail"}),
         description=(
-            "Full recipe detail: all versions plus the ingredient lines of the "
-            "latest version."
+            "Full recipe detail: all versions plus the ingredient lines of the latest version."
         ),
     )
     def get_recipe(
@@ -515,9 +523,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
             version = recipe_service.get_version(session, membership, recipe.id, 1)
             published = False
             if publish:
-                recipe_service.publish_version(
-                    session, membership, recipe.id, 1, commit=False
-                )
+                recipe_service.publish_version(session, membership, recipe.id, 1, commit=False)
                 published = True
             session.commit()
             return {
@@ -531,7 +537,6 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
             }
 
         return rt.call(ctx, run)
-
 
     @mcp.tool(
         name="uribap_update_recipe",
@@ -557,8 +562,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
             Field(
                 max_length=100,
                 description=(
-                    "Replacement ingredient list (up to 100); omitted means "
-                    "keep current lines"
+                    "Replacement ingredient list (up to 100); omitted means keep current lines"
                 ),
             ),
         ] = None,
@@ -571,9 +575,7 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
             if description is not None:
                 metadata["description"] = None if description == "" else description
             has_content = (
-                base_servings is not None
-                or prep_minutes is not None
-                or ingredients is not None
+                base_servings is not None or prep_minutes is not None or ingredients is not None
             )
             if not metadata and not has_content:
                 raise ToolError("Provide at least one recipe field to update.")

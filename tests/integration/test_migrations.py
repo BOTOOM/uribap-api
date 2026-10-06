@@ -21,6 +21,7 @@ from uribap_api.application.completion_service import (
 )
 from uribap_api.domain.completion.policies import MealCompletionOutcome, MealCompletionState
 from uribap_api.domain.identity.policies import MembershipRole, MembershipStatus
+from uribap_api.domain.ingredients.policies import IngredientDimension
 from uribap_api.domain.shared.fingerprint import operation_fingerprint
 from uribap_api.infrastructure.persistence.completion_models import (
     CompletionOperation,
@@ -28,6 +29,7 @@ from uribap_api.infrastructure.persistence.completion_models import (
 )
 from uribap_api.infrastructure.persistence.household_models import Household, HouseholdMember
 from uribap_api.infrastructure.persistence.identity_models import AppUser
+from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
 
 
 def _legacy_completion_payload(
@@ -74,6 +76,60 @@ def test_current_migration_head_is_applied(integration_engine: Engine) -> None:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
     assert revision == heads[0]
+
+
+@pytest.mark.integration
+def test_pantry_staple_migration_defaults_existing_ingredients_to_false(
+    integration_engine: Engine,
+) -> None:
+    config_path = Path(__file__).resolve().parents[2] / "alembic.ini"
+    config = Config(str(config_path))
+    user_id, household_id, ingredient_id = uuid4(), uuid4(), uuid4()
+    with Session(integration_engine) as session:
+        session.add(AppUser(id=user_id, email=f"{user_id}@example.test", email_verified=True))
+        session.add(
+            Household(id=household_id, name="Pantry migration", locale="es", timezone="UTC")
+        )
+        session.add(
+            Ingredient(
+                id=ingredient_id,
+                household_id=household_id,
+                name="Pantry migration salt",
+                normalized_name=f"pantry-migration-{uuid4()}",
+                dimension=IngredientDimension.MASS,
+                base_unit="g",
+                created_by_user_id=user_id,
+            )
+        )
+        session.commit()
+        session.execute(
+            text("UPDATE ingredient SET pantry_staple = true WHERE id = :ingredient_id"),
+            {"ingredient_id": ingredient_id},
+        )
+        session.commit()
+
+    try:
+        command.downgrade(config, "6b1354a22e91")
+        command.upgrade(config, "head")
+        with integration_engine.connect() as connection:
+            pantry_staple = connection.execute(
+                text("SELECT pantry_staple FROM ingredient WHERE id = :ingredient_id"),
+                {"ingredient_id": ingredient_id},
+            ).scalar_one()
+        assert pantry_staple is False
+    finally:
+        command.upgrade(config, "head")
+        with Session(integration_engine) as session:
+            session.execute(
+                text("DELETE FROM ingredient WHERE id = :ingredient_id"),
+                {"ingredient_id": ingredient_id},
+            )
+            session.execute(
+                text("DELETE FROM household WHERE id = :household_id"),
+                {"household_id": household_id},
+            )
+            session.execute(text("DELETE FROM app_user WHERE id = :user_id"), {"user_id": user_id})
+            session.commit()
 
 
 @pytest.mark.integration

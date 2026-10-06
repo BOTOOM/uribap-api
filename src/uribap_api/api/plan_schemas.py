@@ -117,6 +117,7 @@ class MealPlanEntryDetailIngredientResponse(BaseModel):
     on_hand_amount: Decimal
     shortfall_amount: Decimal
     position: int
+    pantry_staple: bool
 
 
 class MealPlanEntryDetailResponse(BaseModel):

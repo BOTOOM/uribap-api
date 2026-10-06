@@ -438,13 +438,17 @@ def complete_entry(
             "The recipe version for this entry is unavailable.",
             409,
         )
-    ingredients = list(
-        session.scalars(
-            select(RecipeVersionIngredient)
+    ingredient_rows = list(
+        session.execute(
+            select(RecipeVersionIngredient, Ingredient.pantry_staple)
+            .join(Ingredient, Ingredient.id == RecipeVersionIngredient.ingredient_id)
             .where(RecipeVersionIngredient.recipe_version_id == version.id)
             .order_by(RecipeVersionIngredient.position, RecipeVersionIngredient.id)
         )
     )
+    pantry_staple_ids = {
+        row.ingredient_id for row, pantry_staple in ingredient_rows if pantry_staple
+    }
     try:
         lines = planned_lines(
             [
@@ -453,8 +457,9 @@ def complete_entry(
                     amount=Decimal(row.amount),
                     unit=row.unit,
                     optional=row.optional,
+                    pantry_staple=pantry_staple,
                 )
-                for row in ingredients
+                for row, pantry_staple in ingredient_rows
             ],
             entry.servings,
             version.base_servings,
@@ -470,6 +475,7 @@ def complete_entry(
                     )
                     for line in payload.lines
                 ],
+                pantry_staple_ids=pantry_staple_ids,
             )
     except MealCompletionError as exc:
         raise _validation_error(exc) from exc

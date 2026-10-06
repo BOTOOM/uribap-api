@@ -19,6 +19,7 @@ def _row(
     unit: str = "kg",
     optional: bool = False,
     row_id: UUID | None = None,
+    pantry_staple: bool = False,
 ) -> RecipeIngredientRow:
     return RecipeIngredientRow(
         row_id=row_id or uuid4(),
@@ -27,6 +28,7 @@ def _row(
         unit=unit,
         optional=optional,
         position=position,
+        pantry_staple=pantry_staple,
     )
 
 
@@ -188,3 +190,46 @@ def test_detail_returns_empty_for_recipe_without_ingredients() -> None:
         )
         == []
     )
+
+
+def test_detail_staple_with_partial_stock_has_no_shortfall_or_allocation() -> None:
+    staple_id = uuid4()
+    rows = [
+        _row(staple_id, "0.75", 0, pantry_staple=True),
+        _row(staple_id, "0.75", 1, pantry_staple=True),
+    ]
+
+    result = calculate_entry_detail_ingredients(
+        rows,
+        [_lot(staple_id, "0.5")],
+        servings=2,
+        base_servings=2,
+        planned_date=date(2026, 3, 20),
+        local_today=date(2026, 3, 1),
+    )
+
+    assert [line.pantry_staple for line in result] == [True, True]
+    assert [line.on_hand_amount for line in result] == [
+        Decimal("0.500000"),
+        Decimal("0.500000"),
+    ]
+    assert [line.shortfall_amount for line in result] == [
+        Decimal("0.000000"),
+        Decimal("0.000000"),
+    ]
+
+
+def test_detail_staple_with_no_stock_has_required_amount_shortfall() -> None:
+    staple_id = uuid4()
+
+    result = calculate_entry_detail_ingredients(
+        [_row(staple_id, "0.75", 0, pantry_staple=True)],
+        [],
+        servings=2,
+        base_servings=2,
+        planned_date=date(2026, 3, 20),
+        local_today=date(2026, 3, 1),
+    )
+
+    assert result[0].pantry_staple is True
+    assert result[0].shortfall_amount == result[0].required_amount

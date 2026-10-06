@@ -78,7 +78,13 @@ def _member(session: Session) -> tuple[Household, HouseholdMember]:
     return household, member
 
 
-def _ingredient(session: Session, household: Household, name: str) -> Ingredient:
+def _ingredient(
+    session: Session,
+    household: Household,
+    name: str,
+    *,
+    pantry_staple: bool = False,
+) -> Ingredient:
     ingredient = Ingredient(
         id=uuid4(),
         household_id=household.id,
@@ -86,6 +92,7 @@ def _ingredient(session: Session, household: Household, name: str) -> Ingredient
         normalized_name=f"{name}-{uuid4()}",
         dimension=IngredientDimension.MASS,
         base_unit="g",
+        pantry_staple=pantry_staple,
     )
     session.add(ingredient)
     session.flush()
@@ -284,6 +291,112 @@ def test_complete_splits_across_lots_fefo(integration_engine) -> None:
         assert earlier.quantity_on_hand == Decimal("0.000000")
         assert later.quantity_on_hand == Decimal("1.700000")
         assert expired.quantity_on_hand == Decimal("9.000000")
+
+
+def test_complete_excludes_staples_and_allows_all_staple_recipe(integration_engine) -> None:
+    week = WEEK + timedelta(weeks=int(uuid4().int % 100) + 1200)
+    with Session(integration_engine) as session:
+        household, member = _member(session)
+        rice = _ingredient(session, household, "Rice")
+        salt = _ingredient(session, household, "Salt", pantry_staple=True)
+        spice = _ingredient(session, household, "Spice", pantry_staple=True)
+        rice_lot = _lot(session, member, rice, "1", None, unit="kg")
+        salt_lot = _lot(session, member, salt, "5", None, unit="g")
+        mixed_version = _version(
+            session,
+            household,
+            member,
+            [
+                (rice, "0.5", "kg", False),
+                (salt, "5", "g", False),
+                (spice, "5", "g", False),
+            ],
+        )
+        mixed_plan_id, mixed_entry_id = _plan_with_entry(session, member, week, mixed_version)
+
+        all_staple_version = _version(session, household, member, [(spice, "5", "g", False)])
+        all_staple_plan_id, all_staple_entry_id = _plan_with_entry(
+            session, member, week + timedelta(weeks=1), all_staple_version
+        )
+        empty_version = _version(session, household, member, [])
+        empty_plan_id, empty_entry_id = _plan_with_entry(
+            session, member, week + timedelta(weeks=2), empty_version
+        )
+        session.commit()
+
+        mixed = complete_entry(
+            session, member, mixed_plan_id, mixed_entry_id, MealCompletionCreate(), None
+        )
+        assert [line["ingredient_id"] for line in mixed.payload["lines"]] == [str(rice.id)]
+        session.refresh(rice_lot)
+        session.refresh(salt_lot)
+        assert rice_lot.quantity_on_hand == Decimal("0.500000")
+        assert salt_lot.quantity_on_hand == Decimal("5.000000")
+
+        all_staple = complete_entry(
+            session,
+            member,
+            all_staple_plan_id,
+            all_staple_entry_id,
+            MealCompletionCreate(),
+            None,
+        )
+        assert all_staple.payload["lines"] == []
+
+        with pytest.raises(DomainError) as empty_recipe:
+            complete_entry(
+                session,
+                member,
+                empty_plan_id,
+                empty_entry_id,
+                MealCompletionCreate(),
+                None,
+            )
+        assert empty_recipe.value.status_code == 422
+        assert empty_recipe.value.code == "validation_error"
+        assert empty_recipe.value.detail == "the recipe version has no consumable ingredients"
+
+
+def test_complete_rejects_explicit_pantry_staple_line(integration_engine) -> None:
+    week = WEEK + timedelta(weeks=int(uuid4().int % 100) + 1320)
+    with Session(integration_engine) as session:
+        household, member = _member(session)
+        rice = _ingredient(session, household, "Rice")
+        salt = _ingredient(session, household, "Salt", pantry_staple=True)
+        version = _version(
+            session,
+            household,
+            member,
+            [(rice, "0.5", "kg", False), (salt, "5", "g", False)],
+        )
+        plan_id, entry_id = _plan_with_entry(session, member, week, version)
+        session.commit()
+
+        with pytest.raises(DomainError) as excinfo:
+            complete_entry(
+                session,
+                member,
+                plan_id,
+                entry_id,
+                MealCompletionCreate(
+                    lines=[
+                        CompletionActualLine(
+                            ingredient_id=salt.id,
+                            actual_amount=Decimal("5"),
+                            unit="g",
+                        )
+                    ]
+                ),
+                None,
+            )
+
+        assert excinfo.value.status_code == 422
+        assert excinfo.value.code == "validation_error"
+        assert (
+            excinfo.value.detail
+            == "pantry staple ingredients are not consumed by completions; adjust the lot instead"
+        )
+        assert list_completions(session, member, None, None, None, None) == []
 
 
 def test_complete_requires_approved_plan(integration_engine) -> None:

@@ -32,6 +32,7 @@ def response(ingredient: Ingredient) -> IngredientResponse:
         category=ingredient.category,
         dimension=ingredient.dimension,
         base_unit=ingredient.base_unit,
+        pantry_staple=ingredient.pantry_staple,
         archived_at=ingredient.archived_at,
     )
 

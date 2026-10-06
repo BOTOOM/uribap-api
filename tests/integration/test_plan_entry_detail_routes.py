@@ -183,6 +183,7 @@ def test_plan_entry_detail_route_returns_scaled_stock_and_tenant_scoped_404s(
                     "on_hand_amount": "40.000000",
                     "shortfall_amount": "60.000000",
                     "position": 0,
+                    "pantry_staple": False,
                 }
             ]
 
@@ -202,3 +203,28 @@ def test_plan_entry_detail_route_requires_authentication() -> None:
         response = client.get(f"/api/v1/plans/{uuid4()}/entries/{uuid4()}/detail")
     assert response.status_code == 401
     assert response.json()["code"] == "unauthorized"
+
+
+def test_plan_entry_detail_route_includes_pantry_staple_status(
+    integration_engine,
+    monkeypatch,
+) -> None:
+    session = Session(integration_engine)
+    household, member = _member(session, "Pantry detail route")
+    plan, entry, ingredient = _entry(session, household, member, WEEK, "Pantry detail")
+    ingredient.pantry_staple = True
+    session.commit()
+    monkeypatch.setitem(app.dependency_overrides, get_active_household_membership, lambda: member)
+
+    try:
+        with TestClient(app) as client:
+            response = client.get(f"/api/v1/plans/{plan.id}/entries/{entry.id}/detail")
+
+        assert response.status_code == 200
+        line = response.json()["ingredients"][0]
+        assert line["ingredient_id"] == str(ingredient.id)
+        assert line["pantry_staple"] is True
+        assert line["on_hand_amount"] == "40.000000"
+        assert Decimal(line["shortfall_amount"]) == Decimal("0")
+    finally:
+        session.close()

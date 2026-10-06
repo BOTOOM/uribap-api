@@ -427,9 +427,10 @@ def get_entry_detail(
             "not_found", "Recipe not found", "The recipe for this entry could not be found.", 404
         )
 
-    recipe_ingredients = list(
-        session.scalars(
-            select(RecipeVersionIngredient)
+    recipe_ingredient_rows = list(
+        session.execute(
+            select(RecipeVersionIngredient, Ingredient.pantry_staple)
+            .join(Ingredient, Ingredient.id == RecipeVersionIngredient.ingredient_id)
             .where(RecipeVersionIngredient.recipe_version_id == version.id)
             .order_by(
                 RecipeVersionIngredient.position,
@@ -438,6 +439,10 @@ def get_entry_detail(
             )
         )
     )
+    recipe_ingredients = [row for row, _pantry_staple in recipe_ingredient_rows]
+    pantry_staples = {
+        row.ingredient_id: pantry_staple for row, pantry_staple in recipe_ingredient_rows
+    }
     recipe_ingredient_ids = sorted({row.ingredient_id for row in recipe_ingredients})
     stock_lots = (
         list(
@@ -470,6 +475,7 @@ def get_entry_detail(
                     unit=row.unit,
                     optional=row.optional,
                     position=row.position,
+                    pantry_staple=pantry_staples[row.ingredient_id],
                 )
                 for row in recipe_ingredients
             ],
@@ -537,6 +543,7 @@ def get_entry_detail(
             on_hand_amount=line.on_hand_amount,
             shortfall_amount=line.shortfall_amount,
             position=line.position,
+            pantry_staple=line.pantry_staple,
         )
         for line in detail_ingredients
     ]

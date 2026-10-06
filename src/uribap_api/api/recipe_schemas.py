@@ -19,6 +19,7 @@ class IngredientCreate(BaseModel):
     category: str | None = None
     dimension: IngredientDimension
     base_unit: str
+    pantry_staple: bool = False
     package_size_amount: str | None = None
     package_size_unit: str | None = None
 
@@ -39,6 +40,7 @@ class IngredientCreate(BaseModel):
 class IngredientUpdate(BaseModel):
     name: str | None = None
     category: str | None = None
+    pantry_staple: bool | None = None
 
     @field_validator("name")
     @classmethod
@@ -54,6 +56,7 @@ class IngredientResponse(BaseModel):
     category: str | None
     dimension: IngredientDimension
     base_unit: str
+    pantry_staple: bool
     archived_at: datetime | None
 
 

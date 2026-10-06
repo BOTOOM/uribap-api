@@ -205,6 +205,10 @@
             "title": "Optional Amount",
             "type": "string"
           },
+          "pantry_staple": {
+            "title": "Pantry Staple",
+            "type": "boolean"
+          },
           "required_amount": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Required Amount",
@@ -233,7 +237,8 @@
           "optional_amount",
           "total_amount",
           "on_hand_amount",
-          "shortfall_amount"
+          "shortfall_amount",
+          "pantry_staple"
         ],
         "title": "DemandForecastLine",
         "type": "object"
@@ -675,6 +680,11 @@
               }
             ],
             "title": "Package Size Unit"
+          },
+          "pantry_staple": {
+            "default": false,
+            "title": "Pantry Staple",
+            "type": "boolean"
           }
         },
         "required": [
@@ -772,6 +782,10 @@
           "normalized_name": {
             "title": "Normalized Name",
             "type": "string"
+          },
+          "pantry_staple": {
+            "title": "Pantry Staple",
+            "type": "boolean"
           }
         },
         "required": [
@@ -782,6 +796,7 @@
           "category",
           "dimension",
           "base_unit",
+          "pantry_staple",
           "archived_at"
         ],
         "title": "IngredientResponse",
@@ -810,6 +825,17 @@
               }
             ],
             "title": "Name"
+          },
+          "pantry_staple": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pantry Staple"
           }
         },
         "title": "IngredientUpdate",
@@ -1971,6 +1997,10 @@
             "title": "Optional",
             "type": "boolean"
           },
+          "pantry_staple": {
+            "title": "Pantry Staple",
+            "type": "boolean"
+          },
           "position": {
             "title": "Position",
             "type": "integer"
@@ -1998,7 +2028,8 @@
           "optional",
           "on_hand_amount",
           "shortfall_amount",
-          "position"
+          "position",
+          "pantry_staple"
         ],
         "title": "MealPlanEntryDetailIngredientResponse",
         "type": "object"
