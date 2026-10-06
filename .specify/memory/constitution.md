@@ -1,7 +1,7 @@
 <!--
 Sync Impact Report
-Version change: 1.0.1 → 1.0.2
-Modified principles: Development Workflow and Model Policy; removed mandatory CLI verification of model identifiers.
+Version change: 1.0.1 → 1.1.0
+Modified principles: Development Workflow and Model Policy; removed mandatory CLI verification of model identifiers (minor: changes an obligation).
 Added sections: none.
 Removed sections: none.
 Deferred items: exact dependency versions are selected during foundation after release-age and security checks.
@@ -98,4 +98,4 @@ A major version changes or removes a principle; a minor version adds a principle
 expands governance; a patch version clarifies wording without changing obligations. Any
 constitution conflict found by analysis is blocking until resolved explicitly.
 
-**Version**: 1.0.2 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-10-06
+**Version**: 1.1.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-10-06
