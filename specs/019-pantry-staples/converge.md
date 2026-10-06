@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation and local verification are complete; commit and push are pending.
+Implementation and local verification are complete; the feature commit is pushed.
 
 ## Expected delivery
 
@@ -29,7 +29,7 @@ To be completed after implementation:
 | OpenAPI | `PYTHONPATH=src uv run python -m uribap_api.tools.export_openapi --check` | Pass: exit 0 |
 | Security | `uv run pip-audit` | Pass: no known vulnerabilities |
 | Resource sample | `docker stats --no-stream` | DB: 97.27 MiB / 31.34 GiB; no API container/process or feature budget |
-| Diff | `git diff --check` | Pending final documentation edit |
+| Diff | `git diff --check` | Pass |
 
 ## Workflow notes
 
@@ -41,5 +41,7 @@ To be completed after implementation:
 
 ## Final result
 
-Implementation and verification complete. Commit, push, SHA, diff stat, and final diff check are
-pending.
+Implementation commit `ff66e20fa6453ce783810c2b786a4ae1761ee79d` (`feat(019): add pantry staple
+ingredients`) is pushed to `devin/1791246997-pantry-staples`. It changes 39 files with 1,443
+insertions and 55 deletions. The single Alembic head is `674f2f27ef53`. The API feature is ready
+for the Web contract sync; CI was not watched.
