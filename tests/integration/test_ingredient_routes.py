@@ -168,6 +168,52 @@ def test_ingredient_route_paginates_ties_in_stable_two_page_order(
         session.close()
 
 
+def test_ingredient_route_paginates_long_unicode_names_with_cursor(
+    integration_engine,
+    monkeypatch,
+) -> None:
+    session = Session(integration_engine)
+    member = _member(session)
+    prefix = "𝄞" * 159
+    ingredients = [
+        _ingredient(member, f"{prefix}𝄞"),
+        _ingredient(member, f"{prefix}😀"),
+    ]
+    session.add_all(ingredients)
+    session.commit()
+    monkeypatch.setitem(app.dependency_overrides, get_active_household_membership, lambda: member)
+
+    try:
+        with TestClient(app) as client:
+            first_page = client.get(
+                "/api/v1/ingredients",
+                params={"include_global": False, "limit": 1},
+            )
+            assert first_page.status_code == 200
+            first_payload = first_page.json()
+            assert len(first_payload["items"]) == 1
+            assert first_payload["page_info"]["next_cursor"] is not None
+
+            second_page = client.get(
+                "/api/v1/ingredients",
+                params={
+                    "include_global": False,
+                    "limit": 1,
+                    "cursor": first_payload["page_info"]["next_cursor"],
+                },
+            )
+            assert second_page.status_code == 200
+            second_payload = second_page.json()
+
+        actual_ids = [item["id"] for item in first_payload["items"] + second_payload["items"]]
+        assert len(second_payload["items"]) == 1
+        assert second_payload["page_info"]["next_cursor"] is None
+        assert set(actual_ids) == {str(ingredient.id) for ingredient in ingredients}
+        assert len(actual_ids) == len(set(actual_ids)) == 2
+    finally:
+        session.close()
+
+
 def test_ingredient_route_invalid_cursor_returns_problem_details(
     integration_engine,
     monkeypatch,

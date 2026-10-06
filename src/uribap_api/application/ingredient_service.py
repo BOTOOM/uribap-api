@@ -26,6 +26,7 @@ class IngredientPageResult:
 def _encode_ingredient_cursor(normalized_name: str, ingredient_id: UUID) -> str:
     payload = json.dumps(
         {"n": normalized_name, "id": str(ingredient_id)},
+        ensure_ascii=False,
         separators=(",", ":"),
     ).encode("utf-8")
     return base64.urlsafe_b64encode(payload).decode("ascii")
@@ -33,7 +34,7 @@ def _encode_ingredient_cursor(normalized_name: str, ingredient_id: UUID) -> str:
 
 def _decode_ingredient_cursor(cursor: str) -> tuple[str, UUID]:
     try:
-        if len(cursor) > 512 or not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", cursor):
+        if len(cursor) > 1024 or not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", cursor):
             raise ValueError
         encoded = cursor + "=" * (-len(cursor) % 4)
         payload = json.loads(

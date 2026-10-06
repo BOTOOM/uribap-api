@@ -1,9 +1,11 @@
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from uribap_api.api.dependencies import get_active_household_membership, get_session
+from uribap_api.api.inventory_schemas import ProblemDetails
 from uribap_api.api.recipe_schemas import (
     IngredientCreate,
     IngredientPage,
@@ -23,6 +25,12 @@ from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
 
 router = APIRouter(prefix="/ingredients", tags=["ingredients"])
 
+ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: {"model": ProblemDetails},
+    403: {"model": ProblemDetails},
+    422: {"model": ProblemDetails},
+}
+
 
 def response(ingredient: Ingredient) -> IngredientResponse:
     return IngredientResponse(
@@ -38,7 +46,7 @@ def response(ingredient: Ingredient) -> IngredientResponse:
     )
 
 
-@router.get("", response_model=IngredientPage)
+@router.get("", response_model=IngredientPage, responses=ERROR_RESPONSES)
 def list_route(
     query: str | None = None,
     dimension: str | None = None,

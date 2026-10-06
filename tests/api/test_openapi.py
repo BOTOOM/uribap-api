@@ -42,6 +42,10 @@ def test_openapi_exposes_ingredient_cursor_pagination() -> None:
         == "#/components/schemas/IngredientPage"
     )
     assert (
+        operation["responses"]["422"]["content"]["application/json"]["schema"]["$ref"]
+        == "#/components/schemas/ProblemDetails"
+    )
+    assert (
         schemas["IngredientPage"]["properties"]["page_info"]["$ref"]
         == "#/components/schemas/PageInfo"
     )
