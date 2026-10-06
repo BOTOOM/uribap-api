@@ -17,6 +17,7 @@ class RecipeIngredientRow:
     unit: str
     optional: bool
     position: int
+    pantry_staple: bool = False
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ class EntryDetailIngredient:
     on_hand_amount: Decimal
     shortfall_amount: Decimal
     position: int
+    pantry_staple: bool = False
 
 
 def calculate_entry_detail_ingredients(
@@ -71,6 +73,7 @@ def calculate_entry_detail_ingredients(
                 amount=row.amount,
                 unit=row.unit,
                 optional=row.optional,
+                pantry_staple=row.pantry_staple,
             ),
             servings,
             base_servings,
@@ -79,6 +82,11 @@ def calculate_entry_detail_ingredients(
             continue
         key = (line.ingredient_id, line.unit)
         remaining = remaining_stock.get(key, Decimal("0"))
+        shortfall = (
+            (line.planned_amount if remaining == 0 else Decimal("0"))
+            if row.pantry_staple
+            else max(Decimal("0"), line.planned_amount - remaining)
+        )
         projected.append(
             EntryDetailIngredient(
                 ingredient_id=line.ingredient_id,
@@ -86,9 +94,11 @@ def calculate_entry_detail_ingredients(
                 unit=line.unit,
                 optional=line.optional,
                 on_hand_amount=remaining,
-                shortfall_amount=max(Decimal("0"), line.planned_amount - remaining),
+                shortfall_amount=shortfall,
                 position=row.position,
+                pantry_staple=row.pantry_staple,
             )
         )
-        remaining_stock[key] = remaining - min(line.planned_amount, remaining)
+        if not row.pantry_staple:
+            remaining_stock[key] = remaining - min(line.planned_amount, remaining)
     return projected

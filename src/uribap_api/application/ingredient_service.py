@@ -26,6 +26,7 @@ def create_ingredient(
         category=payload.category,
         dimension=payload.dimension,
         base_unit=payload.base_unit,
+        pantry_staple=payload.pantry_staple,
         package_size_amount=float(payload.package_size_amount)
         if payload.package_size_amount
         else None,
@@ -54,9 +55,7 @@ def create_ingredient(
     return ingredient
 
 
-def find_by_name(
-    session: Session, membership: HouseholdMember, name: str
-) -> Ingredient | None:
+def find_by_name(session: Session, membership: HouseholdMember, name: str) -> Ingredient | None:
     normalized_name = normalize_ingredient_name(name)
     statement = (
         select(Ingredient)
@@ -134,6 +133,8 @@ def update_ingredient(
         ingredient.normalized_name = normalize_ingredient_name(payload.name)
     if payload.category is not None:
         ingredient.category = payload.category
+    if payload.pantry_staple is not None:
+        ingredient.pantry_staple = payload.pantry_staple
     try:
         session.commit()
     except IntegrityError as exc:

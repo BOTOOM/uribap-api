@@ -85,19 +85,23 @@ def demand_forecast(
                 RecipeVersionIngredient.amount,
                 RecipeVersionIngredient.unit,
                 RecipeVersionIngredient.optional,
-            ).where(RecipeVersionIngredient.recipe_version_id.in_(version_ids))
+                Ingredient.pantry_staple,
+            )
+            .join(Ingredient, Ingredient.id == RecipeVersionIngredient.ingredient_id)
+            .where(RecipeVersionIngredient.recipe_version_id.in_(version_ids))
         ).all()
         if version_ids
         else []
     )
     ingredients_by_version: dict[UUID, list[RecipeIngredientDemand]] = {}
-    for version_id, ingredient_id, amount, unit, optional in ingredient_rows:
+    for version_id, ingredient_id, amount, unit, optional, pantry_staple in ingredient_rows:
         ingredients_by_version.setdefault(version_id, []).append(
             RecipeIngredientDemand(
                 ingredient_id=ingredient_id,
                 amount=Decimal(amount),
                 unit=unit,
                 optional=optional,
+                pantry_staple=pantry_staple,
             )
         )
 
@@ -150,6 +154,7 @@ def demand_forecast(
                 total_amount=line.total_amount,
                 on_hand_amount=line.on_hand_amount,
                 shortfall_amount=line.shortfall_amount,
+                pantry_staple=line.pantry_staple,
             )
             for line in projected
         ),

@@ -56,7 +56,13 @@ def _member(session: Session) -> tuple[Household, HouseholdMember]:
     return household, member
 
 
-def _ingredient(session: Session, household: Household, name: str) -> Ingredient:
+def _ingredient(
+    session: Session,
+    household: Household,
+    name: str,
+    *,
+    pantry_staple: bool = False,
+) -> Ingredient:
     ingredient = Ingredient(
         id=uuid4(),
         household_id=household.id,
@@ -64,6 +70,7 @@ def _ingredient(session: Session, household: Household, name: str) -> Ingredient
         normalized_name=f"{name}-{uuid4()}",
         dimension=IngredientDimension.MASS,
         base_unit="g",
+        pantry_staple=pantry_staple,
     )
     session.add(ingredient)
     session.flush()
@@ -205,6 +212,37 @@ def test_demand_forecast_scales_and_reports_shortfall(integration_engine) -> Non
 
 
 @pytest.mark.integration
+def test_pantry_staple_forecast_only_shortfalls_when_out_of_stock(integration_engine) -> None:
+    week = WEEK + timedelta(weeks=int(uuid4().int % 200) + 900)
+    with Session(integration_engine) as session:
+        household, member = _member(session)
+        salt = _ingredient(session, household, "Salt", pantry_staple=True)
+        version = _version(session, household, member, salt, "100", base=2)
+        _lot(session, household, member, salt, "20", expires=week)
+        _approved_plan(session, member, week, [(week, version, 4)])
+        session.commit()
+        lot = session.scalars(
+            select(InventoryLot).where(InventoryLot.ingredient_id == salt.id)
+        ).one()
+
+        stocked = demand_forecast(session, member, week, week + timedelta(days=6))
+        line = next(item for item in stocked.items if item.ingredient_id == salt.id)
+        assert line.pantry_staple is True
+        assert line.required_amount == Decimal("200.000000")
+        assert line.total_amount == Decimal("200.000000")
+        assert line.on_hand_amount == Decimal("20.000000")
+        assert line.shortfall_amount == Decimal("0.000000")
+
+        lot.quantity_on_hand = Decimal("0")
+        session.commit()
+        empty = demand_forecast(session, member, week, week + timedelta(days=6))
+        line = next(item for item in empty.items if item.ingredient_id == salt.id)
+        assert line.pantry_staple is True
+        assert line.on_hand_amount == Decimal("0.000000")
+        assert line.shortfall_amount == line.total_amount
+        assert empty.considered_plan_ids
+
+
 def test_draft_plan_contributes_nothing(integration_engine) -> None:
     week = WEEK + timedelta(weeks=int(uuid4().int % 200) + 700)
     with Session(integration_engine) as session:

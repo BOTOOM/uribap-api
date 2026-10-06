@@ -64,6 +64,7 @@ class RecipeIngredientInput:
     amount: Decimal
     unit: str
     optional: bool = False
+    pantry_staple: bool = False
 
 
 @dataclass(frozen=True)
@@ -78,13 +79,18 @@ class ConsumptionLine:
 def planned_lines(
     ingredients: list[RecipeIngredientInput], servings: int, base_servings: int
 ) -> list[ConsumptionLine]:
+    if not ingredients:
+        raise MealCompletionError("the recipe version has no consumable ingredients")
     factor = _completion_scale_factor(servings, base_servings)
     lines: list[ConsumptionLine] = []
-    for ingredient in ingredients:
+    consumable_ingredients = [
+        ingredient for ingredient in ingredients if not ingredient.pantry_staple
+    ]
+    for ingredient in consumable_ingredients:
         line = _scaled_recipe_ingredient(ingredient, factor)
         if line is not None:
             lines.append(line)
-    if not lines:
+    if not lines and consumable_ingredients:
         raise MealCompletionError("the recipe version has no consumable ingredients")
     return lines
 
@@ -133,11 +139,17 @@ class ActualLineInput:
 
 
 def apply_actual_amounts(
-    planned: list[ConsumptionLine], actuals: list[ActualLineInput]
+    planned: list[ConsumptionLine],
+    actuals: list[ActualLineInput],
+    pantry_staple_ids: set[UUID] | frozenset[UUID] = frozenset(),
 ) -> list[ConsumptionLine]:
     planned_keys = {(line.ingredient_id, line.unit) for line in planned}
     provided: dict[tuple[UUID, str], Decimal] = {}
     for actual in actuals:
+        if actual.ingredient_id in pantry_staple_ids:
+            raise MealCompletionError(
+                "pantry staple ingredients are not consumed by completions; adjust the lot instead"
+            )
         key = (actual.ingredient_id, actual.unit)
         if key not in planned_keys:
             raise MealCompletionError("actual line does not match any recipe ingredient and unit")

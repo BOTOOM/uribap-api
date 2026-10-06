@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Numeric, String, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Numeric, String, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from uribap_api.domain.ingredients.policies import IngredientDimension
@@ -42,6 +42,7 @@ class Ingredient(Base):
         nullable=False,
     )
     base_unit: Mapped[str] = mapped_column(String(8), nullable=False)
+    pantry_staple: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=false())
     package_size_amount: Mapped[float | None] = mapped_column(Numeric(18, 6))
     package_size_unit: Mapped[str | None] = mapped_column(String(8))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

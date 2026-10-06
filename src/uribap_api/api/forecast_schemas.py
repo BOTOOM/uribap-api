@@ -14,6 +14,7 @@ class DemandForecastLine(BaseModel):
     total_amount: Decimal
     on_hand_amount: Decimal
     shortfall_amount: Decimal
+    pantry_staple: bool
 
 
 class DemandForecastResponse(BaseModel):

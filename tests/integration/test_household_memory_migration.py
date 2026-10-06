@@ -16,10 +16,10 @@ def test_household_memory_migration_is_single_head_after_feature_017(
     heads = scripts.get_heads()
 
     assert len(heads) == 1
-    revision = scripts.get_revision(heads[0])
-    assert revision is not None
-    assert revision.down_revision == "d3c72b91a84f"
-    assert "household_memory" in Path(revision.path).name
+    memory_revision = scripts.get_revision("6b1354a22e91")
+    assert memory_revision is not None
+    assert memory_revision.down_revision == "d3c72b91a84f"
+    assert "household_memory" in Path(memory_revision.path).name
 
     with integration_engine.connect() as connection:
         database_revision = connection.execute(

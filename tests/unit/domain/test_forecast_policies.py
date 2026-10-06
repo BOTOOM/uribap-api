@@ -18,9 +18,18 @@ FROM = date(2026, 9, 28)
 TO = date(2026, 10, 4)
 
 
-def ingredient(unit: str = "g", amount: str = "100", optional: bool = False):
+def ingredient(
+    unit: str = "g",
+    amount: str = "100",
+    optional: bool = False,
+    pantry_staple: bool = False,
+):
     return RecipeIngredientDemand(
-        ingredient_id=uuid4(), amount=Decimal(amount), unit=unit, optional=optional
+        ingredient_id=uuid4(),
+        amount=Decimal(amount),
+        unit=unit,
+        optional=optional,
+        pantry_staple=pantry_staple,
     )
 
 
@@ -123,13 +132,26 @@ class TestProjectDemand:
             project_demand([entry(items=items)], FROM, TO)
 
 
-def _demand_line(target, amount: str, servings: int = 4, base: int = 2):
+def _demand_line(
+    target,
+    amount: str,
+    servings: int = 4,
+    base: int = 2,
+    pantry_staple: bool = False,
+):
     return project_demand(
         [
             entry(
                 servings=servings,
                 base=base,
-                items=[RecipeIngredientDemand(target, Decimal(amount), "g")],
+                items=[
+                    RecipeIngredientDemand(
+                        target,
+                        Decimal(amount),
+                        "g",
+                        pantry_staple=pantry_staple,
+                    )
+                ],
             )
         ],
         FROM,
@@ -157,3 +179,32 @@ class TestApplyOnHand:
         projected = apply_on_hand(line, {(target, "kg"): Decimal("5")})
         assert projected[0].on_hand_amount == Decimal("0.000000")
         assert projected[0].shortfall_amount == Decimal("100.000000")
+
+    def test_staple_with_partial_stock_has_no_shortfall(self):
+        target = uuid4()
+        line = _demand_line(target, "100", servings=2, base=2, pantry_staple=True)
+
+        projected = apply_on_hand(line, {(target, "g"): Decimal("10")})
+
+        assert projected[0].pantry_staple is True
+        assert projected[0].total_amount == Decimal("100.000000")
+        assert projected[0].on_hand_amount == Decimal("10.000000")
+        assert projected[0].shortfall_amount == Decimal("0.000000")
+
+    def test_staple_with_no_stock_has_shortfall_equal_to_total(self):
+        target = uuid4()
+        line = _demand_line(target, "100", servings=2, base=2, pantry_staple=True)
+
+        projected = apply_on_hand(line, {})
+
+        assert projected[0].pantry_staple is True
+        assert projected[0].shortfall_amount == projected[0].total_amount
+
+    def test_non_staple_shortfall_remains_total_minus_on_hand(self):
+        target = uuid4()
+        line = _demand_line(target, "100", servings=2, base=2)
+
+        projected = apply_on_hand(line, {(target, "g"): Decimal("10")})
+
+        assert projected[0].pantry_staple is False
+        assert projected[0].shortfall_amount == Decimal("90.000000")

@@ -27,10 +27,17 @@ def test_completion_outcomes_distinguish_cooked_and_skipped() -> None:
 
 
 def _ingredient(
-    amount: str = "0.5", unit: str = "kg", optional: bool = False
+    amount: str = "0.5",
+    unit: str = "kg",
+    optional: bool = False,
+    pantry_staple: bool = False,
 ) -> RecipeIngredientInput:
     return RecipeIngredientInput(
-        ingredient_id=uuid4(), amount=Decimal(amount), unit=unit, optional=optional
+        ingredient_id=uuid4(),
+        amount=Decimal(amount),
+        unit=unit,
+        optional=optional,
+        pantry_staple=pantry_staple,
     )
 
 
@@ -89,6 +96,26 @@ def test_planned_lines_skips_non_positive_scaled_amounts() -> None:
         planned_lines([tiny], servings=2, base_servings=2)
 
 
+def test_planned_lines_excludes_pantry_staples() -> None:
+    staple = _ingredient(pantry_staple=True)
+    consumed = _ingredient()
+
+    lines = planned_lines([staple, consumed], servings=2, base_servings=2)
+
+    assert [line.ingredient_id for line in lines] == [consumed.ingredient_id]
+
+
+def test_planned_lines_allows_recipe_with_only_pantry_staples() -> None:
+    staple = _ingredient(pantry_staple=True)
+
+    assert planned_lines([staple], servings=2, base_servings=2) == []
+
+
+def test_planned_lines_keeps_empty_recipe_validation_error() -> None:
+    with pytest.raises(MealCompletionError, match="no consumable ingredients"):
+        planned_lines([], servings=2, base_servings=2)
+
+
 def test_apply_actual_amounts_overrides_matching_lines() -> None:
     ingredient = _ingredient()
     lines = planned_lines([ingredient], servings=2, base_servings=2)
@@ -104,6 +131,24 @@ def test_apply_actual_amounts_overrides_matching_lines() -> None:
     )
     assert updated[0].planned_amount == Decimal("0.500000")
     assert updated[0].actual_amount == Decimal("0.700000")
+
+
+def test_apply_actual_amounts_rejects_pantry_staple_with_exact_error() -> None:
+    staple = _ingredient(pantry_staple=True)
+    consumed = _ingredient()
+    lines = planned_lines([staple, consumed], servings=2, base_servings=2)
+
+    with pytest.raises(MealCompletionError) as excinfo:
+        apply_actual_amounts(
+            lines,
+            [ActualLineInput(staple.ingredient_id, Decimal("0.5"), "kg")],
+            pantry_staple_ids={staple.ingredient_id},
+        )
+
+    assert (
+        str(excinfo.value)
+        == "pantry staple ingredients are not consumed by completions; adjust the lot instead"
+    )
 
 
 def test_apply_actual_amounts_drops_uncovered_optional_lines() -> None:

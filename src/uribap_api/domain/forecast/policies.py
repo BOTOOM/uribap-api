@@ -39,6 +39,7 @@ class RecipeIngredientDemand:
     amount: Decimal
     unit: str
     optional: bool = False
+    pantry_staple: bool = False
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ class DemandLine:
     unit: str
     required_amount: Decimal
     optional_amount: Decimal
+    pantry_staple: bool = False
 
     @property
     def total_amount(self) -> Decimal:
@@ -69,6 +71,7 @@ class ProjectedLine:
     optional_amount: Decimal
     on_hand_amount: Decimal
     shortfall_amount: Decimal
+    pantry_staple: bool = False
 
     @property
     def total_amount(self) -> Decimal:
@@ -88,6 +91,7 @@ def project_demand(
 ) -> list[DemandLine]:
     validate_window(from_date, to_date)
     totals: dict[tuple[UUID, str], dict[str, Decimal]] = {}
+    pantry_staples: dict[tuple[UUID, str], bool] = {}
     for entry in entries:
         if not from_date <= entry.planned_date <= to_date:
             continue
@@ -101,6 +105,7 @@ def project_demand(
                 (ingredient.ingredient_id, ingredient.unit),
                 {"required": Decimal(0), "optional": Decimal(0)},
             )
+            pantry_staples[(ingredient.ingredient_id, ingredient.unit)] = ingredient.pantry_staple
             bucket["optional" if ingredient.optional else "required"] += scaled
     lines = [
         DemandLine(
@@ -108,6 +113,7 @@ def project_demand(
             unit=unit,
             required_amount=quantize_amount(amounts["required"]),
             optional_amount=quantize_amount(amounts["optional"]),
+            pantry_staple=pantry_staples[(ingredient_id, unit)],
         )
         for (ingredient_id, unit), amounts in sorted(totals.items())
         if amounts["required"] > 0 or amounts["optional"] > 0
@@ -121,7 +127,10 @@ def apply_on_hand(
     projected: list[ProjectedLine] = []
     for line in lines:
         available = quantize_amount(on_hand.get((line.ingredient_id, line.unit), Decimal(0)))
-        shortfall = line.total_amount - available
+        if line.pantry_staple:
+            shortfall = line.total_amount if available == 0 else Decimal(0)
+        else:
+            shortfall = max(line.total_amount - available, Decimal(0))
         projected.append(
             ProjectedLine(
                 ingredient_id=line.ingredient_id,
@@ -129,7 +138,8 @@ def apply_on_hand(
                 required_amount=line.required_amount,
                 optional_amount=line.optional_amount,
                 on_hand_amount=available,
-                shortfall_amount=max(shortfall, Decimal(0)),
+                shortfall_amount=shortfall,
+                pantry_staple=line.pantry_staple,
             )
         )
     return projected
