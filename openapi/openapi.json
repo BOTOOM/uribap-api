@@ -714,9 +714,7 @@
             "type": "array"
           },
           "page_info": {
-            "additionalProperties": true,
-            "title": "Page Info",
-            "type": "object"
+            "$ref": "#/components/schemas/PageInfo"
           }
         },
         "required": [
@@ -5810,6 +5808,22 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           },
           {

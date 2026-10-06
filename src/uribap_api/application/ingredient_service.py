@@ -1,7 +1,12 @@
+import base64
+import binascii
+import json
+import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import case, or_, select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,6 +15,48 @@ from uribap_api.domain.ingredients.policies import normalize_ingredient_name
 from uribap_api.domain.shared.errors import DomainError
 from uribap_api.infrastructure.persistence.household_models import HouseholdMember
 from uribap_api.infrastructure.persistence.ingredient_models import Ingredient
+
+
+@dataclass(frozen=True, slots=True)
+class IngredientPageResult:
+    items: list[Ingredient]
+    next_cursor: str | None
+
+
+def _encode_ingredient_cursor(normalized_name: str, ingredient_id: UUID) -> str:
+    payload = json.dumps(
+        {"n": normalized_name, "id": str(ingredient_id)},
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii")
+
+
+def _decode_ingredient_cursor(cursor: str) -> tuple[str, UUID]:
+    try:
+        if len(cursor) > 512 or not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", cursor):
+            raise ValueError
+        encoded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(
+            base64.b64decode(encoded, altchars=b"-_", validate=True).decode("utf-8")
+        )
+        if not isinstance(payload, dict) or payload.keys() != {"n", "id"}:
+            raise ValueError
+        normalized_name = payload["n"]
+        raw_id = payload["id"]
+        if (
+            not isinstance(normalized_name, str)
+            or len(normalized_name) > 160
+            or not isinstance(raw_id, str)
+        ):
+            raise ValueError
+        return normalized_name, UUID(raw_id)
+    except (binascii.Error, UnicodeDecodeError, ValueError, TypeError) as exc:
+        raise DomainError(
+            "validation_error",
+            "Invalid ingredient cursor",
+            "The ingredient cursor is invalid.",
+            422,
+        ) from exc
 
 
 def create_ingredient(
@@ -83,7 +130,9 @@ def list_ingredients(
     dimension: str | None,
     include_global: bool,
     limit: int,
-) -> list[Ingredient]:
+    *,
+    cursor: str | None = None,
+) -> IngredientPageResult:
     scopes = [Ingredient.household_id == membership.household_id]
     if include_global:
         scopes.append(Ingredient.household_id.is_(None))
@@ -94,9 +143,31 @@ def list_ingredients(
         )
     if dimension:
         statement = statement.where(Ingredient.dimension == dimension)
-    return list(
-        session.scalars(statement.order_by(Ingredient.normalized_name).limit(min(limit, 100)))
+    if cursor is not None:
+        cursor_name, cursor_id = _decode_ingredient_cursor(cursor)
+        statement = statement.where(
+            or_(
+                Ingredient.normalized_name > cursor_name,
+                and_(
+                    Ingredient.normalized_name == cursor_name,
+                    Ingredient.id > cursor_id,
+                ),
+            )
+        )
+    page_limit = min(limit, 100)
+    rows = list(
+        session.scalars(
+            statement.order_by(Ingredient.normalized_name, Ingredient.id).limit(page_limit + 1)
+        )
     )
+    has_next_page = len(rows) > page_limit
+    items = rows[:page_limit]
+    next_cursor = (
+        _encode_ingredient_cursor(items[-1].normalized_name, items[-1].id)
+        if has_next_page
+        else None
+    )
+    return IngredientPageResult(items=items, next_cursor=next_cursor)
 
 
 def get_ingredient(

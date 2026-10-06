@@ -10,6 +10,7 @@ from uribap_api.api.recipe_schemas import (
     IngredientResponse,
     IngredientUpdate,
 )
+from uribap_api.api.schemas import PageInfo
 from uribap_api.application.ingredient_service import (
     archive_ingredient,
     create_ingredient,
@@ -43,12 +44,22 @@ def list_route(
     dimension: str | None = None,
     include_global: bool = True,
     limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None),
     membership: HouseholdMember = Depends(get_active_household_membership),
     session: Session = Depends(get_session),
 ) -> IngredientPage:
-    items = list_ingredients(session, membership, query, dimension, include_global, limit)
+    page = list_ingredients(
+        session,
+        membership,
+        query,
+        dimension,
+        include_global,
+        limit,
+        cursor=cursor,
+    )
     return IngredientPage(
-        items=[response(item) for item in items], page_info={"limit": min(limit, 100)}
+        items=[response(item) for item in page.items],
+        page_info=PageInfo(next_cursor=page.next_cursor, limit=min(limit, 100)),
     )
 
 
