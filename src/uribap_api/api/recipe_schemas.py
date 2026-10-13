@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from uribap_api.api.schemas import PageInfo
 from uribap_api.domain.ingredients.policies import (
     IngredientDimension,
     validate_unit_for_dimension,
@@ -62,7 +63,7 @@ class IngredientResponse(BaseModel):
 
 class IngredientPage(BaseModel):
     items: list[IngredientResponse]
-    page_info: dict[str, object]
+    page_info: PageInfo
 
 
 class RecipeCreate(BaseModel):

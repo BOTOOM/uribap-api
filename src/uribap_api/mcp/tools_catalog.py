@@ -213,8 +213,9 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
         annotations=READ_ONLY.model_copy(update={"title": "List ingredients"}),
         description=(
             "List the ingredient catalog (household + global). Filter with `query` "
-            "(name substring) or `dimension` (count|mass|volume). Pantry staples are not consumed "
-            "when cooking and appear in shopping only after stock runs out."
+            "(name substring) or `dimension` (count|mass|volume). Pass `cursor` from a previous "
+            "page to continue. Pantry staples are not consumed when cooking and appear in "
+            "shopping only after stock runs out."
         ),
     )
     def list_ingredients(
@@ -228,20 +229,22 @@ def register(mcp: FastMCP, rt: McpRuntime) -> None:
             bool, Field(description="Include global catalog ingredients")
         ] = True,
         limit: Annotated[int, Field(ge=1, le=100)] = 50,
+        cursor: Annotated[
+            str | None, Field(description="Continuation cursor from a prior page")
+        ] = None,
     ) -> dict[str, Any]:
         def run(session, membership, _p):
-            rows = [
-                _ingredient_row(i)
-                for i in ingredient_service.list_ingredients(
-                    session,
-                    membership,
-                    query,
-                    dimension.value if dimension else None,
-                    include_global,
-                    limit,
-                )
-            ]
-            return {"count": len(rows), "items": rows}
+            page = ingredient_service.list_ingredients(
+                session,
+                membership,
+                query,
+                dimension.value if dimension else None,
+                include_global,
+                limit,
+                cursor=cursor,
+            )
+            rows = [_ingredient_row(i) for i in page.items]
+            return {"count": len(rows), "items": rows, "next_cursor": page.next_cursor}
 
         return rt.call(ctx, run)
 
