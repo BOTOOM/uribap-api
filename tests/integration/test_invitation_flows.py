@@ -433,6 +433,59 @@ def test_expired_pending_invitation_can_be_renewed(invitation_client, integratio
         assert invitation.expires_at > datetime.now(UTC)
 
 
+def test_expired_pending_invitation_renewed_for_existing_account_can_be_accepted(
+    invitation_client, integration_engine
+) -> None:
+    client, household_id, principal = invitation_client
+    invitee_id = uuid4()
+    email = f"existing-{invitee_id}@example.test"
+    with Session(integration_engine) as session:
+        session.add(AppUser(id=invitee_id, email=email, email_verified=True))
+        session.commit()
+    directory = StubDirectory(str(invitee_id))
+    app.dependency_overrides[get_user_directory] = lambda: directory
+    payload = {"email": email}
+
+    first = client.post(f"/api/v1/households/{household_id}/invitations", json=payload)
+    assert first.status_code == 202
+    invitation_id = first.json()["id"]
+    first_token_hash: str
+    with Session(integration_engine) as session:
+        invitation = session.scalar(
+            select(HouseholdInvitation).where(HouseholdInvitation.id == UUID(invitation_id))
+        )
+        assert invitation is not None
+        first_token_hash = invitation.token_hash
+        invitation.expires_at = datetime.now(UTC) - timedelta(hours=1)
+        session.commit()
+
+    retry = client.post(f"/api/v1/households/{household_id}/invitations", json=payload)
+
+    assert retry.status_code == 202
+    assert retry.json()["delivery"] == "existing_account"
+    with Session(integration_engine) as session:
+        invitation = session.scalar(
+            select(HouseholdInvitation).where(HouseholdInvitation.id == UUID(invitation_id))
+        )
+        assert invitation is not None
+        assert invitation.token_hash != first_token_hash
+        assert invitation.expires_at > datetime.now(UTC)
+
+    principal["user"] = AppUser(id=invitee_id, email=email, email_verified=True)
+    response = client.post(f"/api/v1/me/invitations/{invitation_id}/accept")
+
+    assert response.status_code == 200
+    with Session(integration_engine) as session:
+        member = session.scalar(
+            select(HouseholdMember).where(
+                HouseholdMember.household_id == household_id,
+                HouseholdMember.user_id == invitee_id,
+            )
+        )
+        assert member is not None
+        assert member.status == MembershipStatus.ACTIVE
+
+
 def test_smtp_fallback_returns_email_on_success(
     invitation_client, integration_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
