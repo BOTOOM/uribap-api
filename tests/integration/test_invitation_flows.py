@@ -25,6 +25,7 @@ from uribap_api.infrastructure.persistence.household_models import (
     Household,
     HouseholdInvitation,
     HouseholdMember,
+    OutboxKind,
     OutboxStatus,
 )
 from uribap_api.infrastructure.persistence.identity_models import AppUser
@@ -712,3 +713,71 @@ def test_accept_by_id_preserves_already_member_error(invitation_client, integrat
 
     assert response.status_code == 409
     assert response.json()["code"] == "invitation_consumed"
+
+
+def test_list_invitations_reports_effective_status_and_delivery(
+    invitation_client, integration_engine
+) -> None:
+    client, household_id, principal = invitation_client
+    owner = principal["user"]
+    valid = insert_invitation(integration_engine, household_id, owner.id, "valid@example.test")
+    expired = insert_invitation(
+        integration_engine,
+        household_id,
+        owner.id,
+        "expired@example.test",
+        expires_at=datetime.now(UTC) - timedelta(hours=1),
+    )
+    insert_invitation(
+        integration_engine,
+        household_id,
+        owner.id,
+        "accepted@example.test",
+        status=InvitationStatus.ACCEPTED,
+    )
+    with Session(integration_engine) as session:
+        session.add_all(
+            [
+                EmailOutboxEntry(
+                    dedupe_key=f"household-invitation:{valid.id}",
+                    kind=OutboxKind.HOUSEHOLD_INVITATION,
+                    recipient_email="valid@example.test",
+                    template_data={},
+                    status=OutboxStatus.SENT,
+                ),
+                EmailOutboxEntry(
+                    dedupe_key=f"household-invitation:{expired.id}",
+                    kind=OutboxKind.HOUSEHOLD_INVITATION,
+                    recipient_email="expired@example.test",
+                    template_data={},
+                    status=OutboxStatus.FAILED,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get(f"/api/v1/households/{household_id}/invitations")
+
+    assert response.status_code == 200
+    items = {item["email"]: item for item in response.json()["items"]}
+    assert items["valid@example.test"]["effective_status"] == "pending"
+    assert items["valid@example.test"]["delivery"] == "sent"
+    assert items["expired@example.test"]["status"] == "pending"
+    assert items["expired@example.test"]["effective_status"] == "expired"
+    assert items["expired@example.test"]["delivery"] == "failed"
+    assert items["accepted@example.test"]["effective_status"] == "accepted"
+    assert items["accepted@example.test"]["delivery"] is None
+
+
+def test_list_invitations_requires_owner_or_admin(invitation_client, integration_engine) -> None:
+    client, household_id, principal = invitation_client
+    outsider_id = uuid4()
+    outsider_email = f"outsider-{outsider_id}@example.test"
+    with Session(integration_engine) as session:
+        session.add(AppUser(id=outsider_id, email=outsider_email, email_verified=True))
+        session.commit()
+    principal["user"] = AppUser(id=outsider_id, email=outsider_email, email_verified=True)
+
+    response = client.get(f"/api/v1/households/{household_id}/invitations")
+
+    assert response.status_code == 403

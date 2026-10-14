@@ -164,13 +164,24 @@ class InvitationResponse(BaseModel):
     email: str
     requested_role: InvitationRole
     status: str
+    effective_status: Literal["pending", "expired", "accepted", "revoked"]
+    delivery: Literal["sent", "failed", "existing_account", "pending"] | None
     expires_at: datetime
     invited_by_user_id: UUID
     created_at: datetime
 
 
-class InvitationCreatedResponse(InvitationResponse):
+class InvitationCreatedResponse(BaseModel):
+    id: UUID
+    household_id: UUID
+    email: str
+    requested_role: InvitationRole
+    status: str
+    effective_status: Literal["pending", "expired", "accepted", "revoked"]
     delivery: Literal["zitadel_invite", "existing_account", "email", "failed"]
+    expires_at: datetime
+    invited_by_user_id: UUID
+    created_at: datetime
 
 
 class InvitationPage(BaseModel):

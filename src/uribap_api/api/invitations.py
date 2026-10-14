@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 from typing import Literal, cast
 from uuid import UUID
 
@@ -28,11 +29,11 @@ from uribap_api.application.invitation_service import (
     accept_invitation,
     accept_invitation_by_id,
     create_invitation,
-    list_invitations,
+    list_invitations_with_delivery,
     list_pending_invitations,
     revoke_invitation,
 )
-from uribap_api.domain.identity.policies import MembershipRole
+from uribap_api.domain.identity.policies import InvitationStatus, MembershipRole
 from uribap_api.infrastructure.email.mailer import send_outbox_entry
 from uribap_api.infrastructure.email.outbox import (
     mark_failed,
@@ -46,6 +47,7 @@ from uribap_api.infrastructure.identity.zitadel_users import (
 from uribap_api.infrastructure.persistence.household_models import (
     HouseholdInvitation,
     HouseholdMember,
+    OutboxStatus,
 )
 from uribap_api.infrastructure.persistence.identity_models import AppUser
 
@@ -53,13 +55,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["invitations"])
 
 
-def invitation_response(invitation: HouseholdInvitation) -> InvitationResponse:
+DeliveryState = Literal["sent", "failed", "existing_account", "pending"]
+EffectiveStatus = Literal["pending", "expired", "accepted", "revoked"]
+
+_DELIVERY_MAP: dict[OutboxStatus, DeliveryState] = {
+    OutboxStatus.SENT: "sent",
+    OutboxStatus.FAILED: "failed",
+    OutboxStatus.SUPPRESSED: "existing_account",
+    OutboxStatus.PENDING: "pending",
+}
+
+
+def _effective_status(invitation: HouseholdInvitation) -> EffectiveStatus:
+    if invitation.status == InvitationStatus.PENDING and invitation.expires_at <= datetime.now(UTC):
+        return "expired"
+    return cast(EffectiveStatus, invitation.status.value)
+
+
+def invitation_response(
+    invitation: HouseholdInvitation, delivery: OutboxStatus | None = None
+) -> InvitationResponse:
     return InvitationResponse(
         id=invitation.id,
         household_id=invitation.household_id,
         email=invitation.invited_email,
         requested_role=cast(InvitationRole, invitation.requested_role.value),
         status=invitation.status.value,
+        effective_status=_effective_status(invitation),
+        delivery=_DELIVERY_MAP[delivery] if delivery is not None else None,
         expires_at=invitation.expires_at,
         invited_by_user_id=invitation.invited_by_user_id,
         created_at=invitation.created_at,
@@ -89,9 +112,9 @@ def list_household_invitations(
     ),
     session: Session = Depends(get_session),
 ) -> InvitationPage:
-    invitations = list_invitations(session, household_id, min(limit, 100))
+    rows = list_invitations_with_delivery(session, household_id, min(limit, 100))
     return InvitationPage(
-        items=[invitation_response(invitation) for invitation in invitations],
+        items=[invitation_response(invitation, outbox) for invitation, outbox in rows],
         page_info=PageInfo(limit=min(limit, 100)),
     )
 
@@ -168,10 +191,8 @@ def create_household_invitation(
             mark_sent(session, outbox.id)
             delivery = "email"
         session.commit()
-    return InvitationCreatedResponse(
-        **invitation_response(invitation).model_dump(),
-        delivery=delivery,
-    )
+    body = invitation_response(invitation).model_dump(exclude={"delivery"})
+    return InvitationCreatedResponse(**body, delivery=delivery)
 
 
 @router.delete(
