@@ -151,6 +151,24 @@ def list_invitations(session: Session, household_id: UUID, limit: int) -> list[H
     )
 
 
+def list_invitations_with_delivery(
+    session: Session, household_id: UUID, limit: int
+) -> list[tuple[HouseholdInvitation, OutboxStatus | None]]:
+    invitations = list_invitations(session, household_id, limit)
+    outboxes = session.scalars(
+        select(EmailOutboxEntry).where(
+            EmailOutboxEntry.dedupe_key.in_(
+                [f"household-invitation:{invitation.id}" for invitation in invitations]
+            )
+        )
+    ).all()
+    by_dedupe = {entry.dedupe_key: entry.status for entry in outboxes}
+    return [
+        (invitation, by_dedupe.get(f"household-invitation:{invitation.id}"))
+        for invitation in invitations
+    ]
+
+
 def revoke_invitation(
     session: Session,
     *,

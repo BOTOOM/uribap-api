@@ -1280,6 +1280,16 @@
             "title": "Delivery",
             "type": "string"
           },
+          "effective_status": {
+            "enum": [
+              "pending",
+              "expired",
+              "accepted",
+              "revoked"
+            ],
+            "title": "Effective Status",
+            "type": "string"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -1323,10 +1333,11 @@
           "email",
           "requested_role",
           "status",
+          "effective_status",
+          "delivery",
           "expires_at",
           "invited_by_user_id",
-          "created_at",
-          "delivery"
+          "created_at"
         ],
         "title": "InvitationCreatedResponse",
         "type": "object"
@@ -1358,6 +1369,35 @@
             "title": "Created At",
             "type": "string"
           },
+          "delivery": {
+            "anyOf": [
+              {
+                "enum": [
+                  "sent",
+                  "failed",
+                  "existing_account",
+                  "pending",
+                  "zitadel_invite",
+                  "email"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery"
+          },
+          "effective_status": {
+            "enum": [
+              "pending",
+              "expired",
+              "accepted",
+              "revoked"
+            ],
+            "title": "Effective Status",
+            "type": "string"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -1401,6 +1441,8 @@
           "email",
           "requested_role",
           "status",
+          "effective_status",
+          "delivery",
           "expires_at",
           "invited_by_user_id",
           "created_at"
