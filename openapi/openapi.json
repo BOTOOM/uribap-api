@@ -1376,9 +1376,7 @@
                   "sent",
                   "failed",
                   "existing_account",
-                  "pending",
-                  "zitadel_invite",
-                  "email"
+                  "pending"
                 ],
                 "type": "string"
               },

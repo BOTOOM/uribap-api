@@ -55,7 +55,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["invitations"])
 
 
-_DELIVERY_MAP = {
+DeliveryState = Literal["sent", "failed", "existing_account", "pending"]
+EffectiveStatus = Literal["pending", "expired", "accepted", "revoked"]
+
+_DELIVERY_MAP: dict[OutboxStatus, DeliveryState] = {
     OutboxStatus.SENT: "sent",
     OutboxStatus.FAILED: "failed",
     OutboxStatus.SUPPRESSED: "existing_account",
@@ -63,10 +66,10 @@ _DELIVERY_MAP = {
 }
 
 
-def _effective_status(invitation: HouseholdInvitation) -> str:
+def _effective_status(invitation: HouseholdInvitation) -> EffectiveStatus:
     if invitation.status == InvitationStatus.PENDING and invitation.expires_at <= datetime.now(UTC):
         return "expired"
-    return invitation.status.value
+    return cast(EffectiveStatus, invitation.status.value)
 
 
 def invitation_response(
@@ -79,7 +82,7 @@ def invitation_response(
         requested_role=cast(InvitationRole, invitation.requested_role.value),
         status=invitation.status.value,
         effective_status=_effective_status(invitation),
-        delivery=_DELIVERY_MAP.get(delivery),
+        delivery=_DELIVERY_MAP[delivery] if delivery is not None else None,
         expires_at=invitation.expires_at,
         invited_by_user_id=invitation.invited_by_user_id,
         created_at=invitation.created_at,
@@ -188,9 +191,8 @@ def create_household_invitation(
             mark_sent(session, outbox.id)
             delivery = "email"
         session.commit()
-    body = invitation_response(invitation)
-    body.delivery = delivery
-    return InvitationCreatedResponse(**body.model_dump())
+    body = invitation_response(invitation).model_dump(exclude={"delivery"})
+    return InvitationCreatedResponse(**body, delivery=delivery)
 
 
 @router.delete(
