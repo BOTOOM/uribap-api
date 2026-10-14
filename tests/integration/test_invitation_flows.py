@@ -404,6 +404,35 @@ def test_non_failed_pending_invitation_cannot_be_retried(
     assert get_outbox_entry(integration_engine, email).status == OutboxStatus.SUPPRESSED
 
 
+def test_expired_pending_invitation_can_be_renewed(invitation_client, integration_engine) -> None:
+    client, household_id, _ = invitation_client
+    email = f"renew-{uuid4()}@example.test"
+    payload = {"email": email}
+
+    first = client.post(f"/api/v1/households/{household_id}/invitations", json=payload)
+    assert first.status_code == 202
+    invitation_id = first.json()["id"]
+
+    with Session(integration_engine) as session:
+        invitation = session.scalar(
+            select(HouseholdInvitation).where(HouseholdInvitation.id == UUID(invitation_id))
+        )
+        assert invitation is not None
+        invitation.expires_at = datetime.now(UTC) - timedelta(hours=1)
+        session.commit()
+
+    retry = client.post(f"/api/v1/households/{household_id}/invitations", json=payload)
+
+    assert retry.status_code == 202
+    assert retry.json()["id"] == invitation_id
+    with Session(integration_engine) as session:
+        invitation = session.scalar(
+            select(HouseholdInvitation).where(HouseholdInvitation.id == UUID(invitation_id))
+        )
+        assert invitation is not None
+        assert invitation.expires_at > datetime.now(UTC)
+
+
 def test_smtp_fallback_returns_email_on_success(
     invitation_client, integration_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:

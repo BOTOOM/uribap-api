@@ -67,12 +67,13 @@ def create_invitation(
             .where(EmailOutboxEntry.dedupe_key == f"household-invitation:{pending.id}")
             .with_for_update()
         )
-        if outbox is None or outbox.status != OutboxStatus.FAILED:
+        now = datetime.now(UTC)
+        expired = pending.expires_at <= now
+        if outbox is None or (outbox.status != OutboxStatus.FAILED and not expired):
             raise DomainError(
                 "conflict", "Invitation conflict", "A pending invitation already exists.", 409
             )
         token = create_invitation_token()
-        now = datetime.now(UTC)
         pending.token_hash = token.digest
         pending.requested_role = MembershipRole(payload.role)
         pending.expires_at = now + timedelta(hours=payload.expires_in_hours)
