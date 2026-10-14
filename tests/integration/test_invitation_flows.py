@@ -449,13 +449,13 @@ def test_expired_pending_invitation_renewed_for_existing_account_can_be_accepted
     first = client.post(f"/api/v1/households/{household_id}/invitations", json=payload)
     assert first.status_code == 202
     invitation_id = first.json()["id"]
-    first_token_hash: str
+    old_token = create_invitation_token()
     with Session(integration_engine) as session:
         invitation = session.scalar(
             select(HouseholdInvitation).where(HouseholdInvitation.id == UUID(invitation_id))
         )
         assert invitation is not None
-        first_token_hash = invitation.token_hash
+        invitation.token_hash = old_token.digest
         invitation.expires_at = datetime.now(UTC) - timedelta(hours=1)
         session.commit()
 
@@ -468,10 +468,17 @@ def test_expired_pending_invitation_renewed_for_existing_account_can_be_accepted
             select(HouseholdInvitation).where(HouseholdInvitation.id == UUID(invitation_id))
         )
         assert invitation is not None
-        assert invitation.token_hash != first_token_hash
+        assert invitation.token_hash != old_token.digest
         assert invitation.expires_at > datetime.now(UTC)
 
     principal["user"] = AppUser(id=invitee_id, email=email, email_verified=True)
+    listing = client.get("/api/v1/me/invitations")
+    assert listing.status_code == 200
+    assert invitation_id in [item["id"] for item in listing.json()["items"]]
+
+    stale = client.post("/api/v1/invitations/accept", json={"token": old_token.raw})
+    assert stale.status_code == 400
+
     response = client.post(f"/api/v1/me/invitations/{invitation_id}/accept")
 
     assert response.status_code == 200
